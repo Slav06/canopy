@@ -3683,7 +3683,14 @@ function DealEditor({
           Private uploads · PDF, DOCX, PNG, JPEG · 10 MB maximum. Upload
           attorney-approved templates; no legal compliance claim is made.
         </p>
+        {s.uploadsEnabled === false && (
+          <p className="inline-alert">
+            File uploads are disabled while testing on free hosting. Lead
+            records, notes and appointments are stored in the database.
+          </p>
+        )}
         <input
+          disabled={s.uploadsEnabled === false}
           aria-label="Upload deal document or photo"
           type="file"
           accept=".pdf,.docx,.jpg,.jpeg,.png"

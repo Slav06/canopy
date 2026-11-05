@@ -1,10 +1,22 @@
+# Free testing deployment (current default)
+
+The root `render.yaml` now uses only a Render Free Node web service. Create a Neon **Free** PostgreSQL project separately and supply its SSL connection URL as `DATABASE_URL` in Render's secure environment form. Neon Free currently has no time limit or required credit card, subject to free-plan usage limits. Render's free server sleeps after inactivity and can take about a minute to wake. Keep both accounts on Free, do not enable paid plans, and do not add a payment method for this test setup. If either provider requires payment to proceed, stop and review rather than activating it.
+
+No Render database or persistent disk is created by this default profile. Agent accounts, leads, notes, appointments and other CRM records live in Neon. Local document/photo uploads are disabled in both the UI and API because Render Free storage disappears on restart. CSV imports still save records in PostgreSQL. Test with sample records first and export test data regularly; free hosting has limits and is not a permanent production reliability guarantee.
+
+Steps: connect Render to the repo; create Neon Free project; paste DATABASE_URL directly into Render (never chat); set BOOTSTRAP_ADMIN_EMAIL and a unique BOOTSTRAP_ADMIN_PASSWORD of 14+ characters in Render; deploy the root Blueprint. Startup creates the empty live workspace and first Admin. Sign in at the HTTPS address, create individual agent accounts under Team and assign test leads. Remove BOOTSTRAP_ADMIN_PASSWORD after the first successful launch. No automatic paid upgrade is configured in the Blueprint.
+
+Verified provider policies: https://render.com/docs/free and https://neon.com/pricing . No hosting resources have been provisioned yet.
+
+---
+
 # Deploy Canopy CRM to Render
 
 This deploys the Node CRM directly from Slav06/canopy, with individual logins, a separate live PostgreSQL database and a persistent private file disk. Existing sample data on the Mac is not uploaded. No live deployment exists until Render provisioning and post-deployment checks complete.
 
 ## Resources to review before deploying
 
-The root render.yaml describes a Starter Node web service, Basic-256mb PostgreSQL with 1 GB storage, and a 1 GB private file disk in Ohio. These are PAID resources. Review current charges in Render before creating the Blueprint. No usage-based autoscaling is enabled. Provider bandwidth/build overages and taxes can still apply. The free Render Postgres plan expires and is unsuitable for permanent team data.
+The optional render.production.yaml describes a Starter Node web service, Basic-256mb PostgreSQL with 1 GB storage, and a 1 GB private file disk in Ohio. These are PAID resources. Review current charges in Render before creating the Blueprint. No usage-based autoscaling is enabled. Provider bandwidth/build overages and taxes can still apply. The free Render Postgres plan expires and is unsuitable for permanent team data.
 
 ## One-time setup
 

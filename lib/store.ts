@@ -107,6 +107,7 @@ export function publicState(
   );
   return {
     ...s,
+    uploadsEnabled: process.env.PRIVATE_UPLOADS_ENABLED !== "false",
     callReviews: publicReviews(s, user as import("./model").User),
     archivedLeads: [
       ...archive,

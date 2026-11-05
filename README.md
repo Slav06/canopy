@@ -135,4 +135,4 @@ Required Basic Agent call reports: [workflow and toolbar limitations](docs/POST-
 
 ## Hosted team deployment
 
-[Render deployment and first Admin setup](docs/DEPLOYMENT.md) uses the root render.yaml. Hosting is not activated merely by pushing this repository. Review paid resources before provisioning.
+[Free test deployment and first Admin setup](docs/DEPLOYMENT.md) uses Render Free plus Neon Free through the root render.yaml. Uploads are disabled on ephemeral hosts. The paid alternative is retained in render.production.yaml. Nothing is activated merely by pushing this repository.

@@ -192,6 +192,7 @@ export type CallReview = {
   formVersion: 1;
 };
 export type State = {
+  uploadsEnabled?: boolean;
   callReviews?: CallReview[];
   archivedLeads?: Lead[];
   messages?: Message[];

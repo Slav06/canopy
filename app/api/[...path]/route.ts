@@ -216,6 +216,11 @@ async function handle(req: NextRequest) {
       return json(publicState(await readState(), user));
     }
     if (route === "documents" && method === "POST") {
+      if (process.env.PRIVATE_UPLOADS_ENABLED === "false")
+        throw new HttpError(
+          409,
+          "Private file uploads are disabled on this test host because its file storage is temporary.",
+        );
       requireCapability(user, "manageDeals");
       const data = await req.formData();
       const file = data.get("file");
