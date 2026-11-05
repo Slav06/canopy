@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.env*
+!.env.example
+.data/
+*.tsbuildinfo
+
+# Local browser verification artifacts may contain account details.
+docs/*.jpg
+docs/*.png
+docs/provider/
+# Private uploads, backups and local tooling state.
+*.log
+*.backup
+*.bak
+.DS_Store
