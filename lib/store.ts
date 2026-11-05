@@ -1,3 +1,4 @@
+import { dataDirectory } from "./data-directory";
 import { publicReviews } from "./post-call";
 import { can, canReadLead } from "./permissions";
 import { Pool } from "pg";
@@ -8,7 +9,7 @@ import { seed } from "./seed";
 export const demo =
   process.env.WORKSPACE_MODE === "demo" ||
   (!process.env.WORKSPACE_MODE && process.env.NODE_ENV !== "production");
-const file = path.join(process.cwd(), ".data", "demo.json");
+const file = path.join(dataDirectory(), "demo.json");
 const globalDb = globalThis as typeof globalThis & {
   canopyPool?: Pool;
   canopyQueue?: Promise<unknown>;

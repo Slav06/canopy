@@ -1,0 +1,49 @@
+# Paid production resources. Review Render's checkout before creating them.
+services:
+  - type: web
+    name: canopy-crm
+    runtime: node
+    region: ohio
+    plan: starter
+    branch: main
+    autoDeployTrigger: off
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start:live
+    healthCheckPath: /api/health
+    disk:
+      name: canopy-private-files
+      mountPath: /var/data/canopy
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: WORKSPACE_MODE
+        value: live
+      - key: DATABASE_URL
+        fromDatabase:
+          name: canopy-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: CRM_DATA_DIR
+        value: /var/data/canopy
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: BOOTSTRAP_ADMIN_NAME
+        value: Canopy Admin
+      - key: NEXT_PUBLIC_MAPILLARY_ENABLED
+        value: false
+      - key: LIVE_CALLING_ENABLED
+        value: false
+      - key: DIALERR_ROLE_BOUNDARY_VERIFIED
+        value: false
+
+databases:
+  - name: canopy-db
+    region: ohio
+    plan: basic-256mb
+    diskSizeGB: 1
+    storageAutoscalingEnabled: false
+    ipAllowList: []

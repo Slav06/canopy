@@ -23,6 +23,7 @@ const origin = `http://127.0.0.1:${appPort}`;
 const env = {
   ...process.env,
   WORKSPACE_MODE: "live",
+  CRM_DATA_DIR: dir + "/private",
   DATABASE_URL: `postgresql://test:${password}@127.0.0.1:${dbPort}/canopy_test`,
   APP_ORIGIN: origin,
   SESSION_SECRET: randomBytes(32).toString("hex"),
@@ -82,13 +83,28 @@ try {
   started = true;
   await pg.createDatabase("canopy_test");
   await exec(process.execPath, ["--import", "tsx", "db/migrate.ts"], { env });
-  await exec(process.execPath, ["--import", "tsx", "db/create-user.ts"], {
+  let refusedBootstrap = false;
+  try {
+    await exec(process.execPath, ["--import", "tsx", "db/bootstrap-admin.ts"], {
+      env,
+    });
+  } catch {
+    refusedBootstrap = true;
+  }
+  pass("first launch rejects absent admin credentials", refusedBootstrap);
+  await exec(process.execPath, ["--import", "tsx", "db/bootstrap-admin.ts"], {
     env: {
       ...env,
-      NEW_USER_EMAIL: "owner@test.invalid",
-      NEW_USER_NAME: "Test Owner",
-      NEW_USER_PASSWORD: password,
-      NEW_USER_ROLE: "owner",
+      BOOTSTRAP_ADMIN_EMAIL: "owner@test.invalid",
+      BOOTSTRAP_ADMIN_NAME: "Test Owner",
+      BOOTSTRAP_ADMIN_PASSWORD: password,
+    },
+  });
+  await exec(process.execPath, ["--import", "tsx", "db/bootstrap-admin.ts"], {
+    env: {
+      ...env,
+      BOOTSTRAP_ADMIN_EMAIL: "replacement@test.invalid",
+      BOOTSTRAP_ADMIN_PASSWORD: password + "other",
     },
   });
   app = spawn(
@@ -114,6 +130,11 @@ try {
     }
   }
   assert.ok(ready, "isolated production server started");
+  const health = await request("health");
+  pass(
+    "unauthenticated health check exposes no workspace data",
+    health.status === 200 && JSON.stringify(health.data) === '{"status":"ok"}',
+  );
   pass(
     "live workspace refuses anonymous access",
     (await request("state")).status === 401,
@@ -143,6 +164,11 @@ try {
     initial.data.mode === "live" &&
       initial.data.state.leads.length === 0 &&
       initial.data.state.contacts.length === 0,
+  );
+  pass(
+    "bootstrap rerun preserves the first admin account",
+    initial.data.state.users.length === 1 &&
+      initial.data.state.users[0].email === "owner@test.invalid",
   );
   const caller = await request("team/users", "POST", {
     name: "Test Caller",
@@ -291,7 +317,7 @@ try {
   });
   const doc = await upload.json();
   pass("owner private upload persists", upload.status === 200);
-  testFiles.push(".data/documents/" + doc.storageKey);
+  testFiles.push(dir + "/private/documents/" + doc.storageKey);
   const download = await fetch(origin + "/api/documents/" + doc.id, {
     headers: { Cookie: ownerCookie },
   });

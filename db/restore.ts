@@ -1,3 +1,4 @@
+import { dataDirectory } from "../lib/data-directory";
 import { readFile, mkdir, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { pool, demo } from "../lib/store";
@@ -43,7 +44,7 @@ try {
   const links = await client.query("SELECT count(*) FROM google_connections");
   if (Number(links.rows[0].count))
     throw Error("Refusing restore: calendar connections exist");
-  const folder = path.join(process.cwd(), ".data", "documents");
+  const folder = path.join(dataDirectory(), "documents");
   await mkdir(folder, { recursive: true, mode: 0o700 });
   for (const file of snapshot.files) {
     if (

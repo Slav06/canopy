@@ -132,3 +132,7 @@ The restore command refuses nonempty workspaces/calendar connection stores and r
 See [role definitions, controls and provider boundaries](docs/ROLES.md). Admin configures agent modes and individual management on/off switches under Team. Basic Agent records are add-only. Only Admin can delete or restore CRM leads; deletion is recoverable. Existing Owner and Caller accounts retain their identifiers and become Admin and Basic Agent respectively. The independent Dialerr account must have matching provider-side restrictions.
 
 Required Basic Agent call reports: [workflow and toolbar limitations](docs/POST-CALL-FORM.md).
+
+## Hosted team deployment
+
+[Render deployment and first Admin setup](docs/DEPLOYMENT.md) uses the root render.yaml. Hosting is not activated merely by pushing this repository. Review paid resources before provisioning.

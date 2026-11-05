@@ -1,10 +1,13 @@
 {
-  "passed": 35,
+  "passed": 38,
   "checks": [
+    "first launch rejects absent admin credentials",
+    "unauthenticated health check exposes no workspace data",
     "live workspace refuses anonymous access",
     "wrong password refused",
     "real owner login succeeds with HttpOnly cookie",
     "migration creates empty live workspace without demo sellers",
+    "bootstrap rerun preserves the first admin account",
     "owner creates real caller login",
     "live lead persists",
     "same seller retains separate properties",

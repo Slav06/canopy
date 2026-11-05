@@ -1,3 +1,4 @@
+import { dataDirectory } from "../lib/data-directory";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pool, demo } from "../lib/store";
@@ -19,9 +20,7 @@ try {
     files.push({
       key: doc.storageKey,
       data: (
-        await readFile(
-          path.join(process.cwd(), ".data", "documents", doc.storageKey),
-        )
+        await readFile(path.join(dataDirectory(), "documents", doc.storageKey))
       ).toString("base64"),
     });
   }

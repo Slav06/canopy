@@ -1,3 +1,4 @@
+import { dataDirectory } from "@/lib/data-directory";
 import { lookupMapillary } from "@/lib/mapillary";
 import { googleEmbed } from "@/lib/property-map";
 import {
@@ -90,6 +91,30 @@ async function handle(req: NextRequest) {
         maxAge: 28800,
       });
       return json({ ok: true });
+    }
+    if (route === "health" && method === "GET") {
+      try {
+        if (demo) return json({ status: "demo" }, 503);
+        if ((process.env.SESSION_SECRET?.length ?? 0) < 32)
+          return json({ status: "unavailable" }, 503);
+        const state = await readState();
+        return json(
+          {
+            status: state.users.some(
+              (u) => u.role === "owner" && u.passwordHash && !u.disabled,
+            )
+              ? "ok"
+              : "unavailable",
+          },
+          state.users.some(
+            (u) => u.role === "owner" && u.passwordHash && !u.disabled,
+          )
+            ? 200
+            : 503,
+        );
+      } catch {
+        return json({ status: "unavailable" }, 503);
+      }
     }
     const user = await currentUser();
     if (route === "auth/logout" && method === "POST") {
@@ -207,7 +232,7 @@ async function handle(req: NextRequest) {
         throw new HttpError(400, "Use PDF, PNG, JPEG or DOCX");
       const id = uid();
       const key = id + ".bin";
-      const folder = path.join(process.cwd(), ".data", "documents");
+      const folder = path.join(dataDirectory(), "documents");
       await mkdir(folder, { recursive: true, mode: 0o700 });
       await writeFile(
         path.join(folder, key),
@@ -238,7 +263,7 @@ async function handle(req: NextRequest) {
       const doc = s.documents.find((d) => d.id === parts[1]);
       if (!doc) throw new HttpError(404, "Document not found");
       const data = await readFile(
-        path.join(process.cwd(), ".data", "documents", doc.storageKey),
+        path.join(dataDirectory(), "documents", doc.storageKey),
       );
       return new NextResponse(data, {
         headers: {

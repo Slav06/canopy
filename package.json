@@ -11,7 +11,8 @@
     "db:migrate": "tsx db/migrate.ts",
     "user:create": "tsx db/create-user.ts",
     "doctor": "node --import tsx db/doctor.ts",
-    "test:postgres": "node --import tsx tests/postgres-smoke.ts"
+    "test:postgres": "node --import tsx tests/postgres-smoke.ts",
+    "start:live": "node scripts/start-live.mjs"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.0",
