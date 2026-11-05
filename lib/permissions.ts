@@ -55,3 +55,12 @@ export function additivePatch(lead: Lead, body: Record<string, unknown>) {
   }
   return true;
 }
+
+export function canBookAppointment(
+  u: Pick<User, "role" | "capabilities">,
+  bookingAllowed: boolean,
+) {
+  return (
+    can(u, "manageAppointments") || (u.role === "caller" && bookingAllowed)
+  );
+}

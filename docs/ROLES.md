@@ -45,3 +45,7 @@ These permissions govern Canopy CRM. The floating Dialerr toolbar is a separate 
 ## Verification
 
 `python3 tests/roles-check.py` verifies 33 direct HTTP checks covering additive information, overwrite prevention, role escalation denial, on/off capabilities, admin-only recoverable deletion, and restoration. It uses loopback demo data and restores the fixture. Core tests and the production build pass. Authenticated PostgreSQL acceptance is separately recorded in `postgres-test-results.json`.
+
+## Basic Agent booking on team calendars
+
+Basic Agents may create a new CRM appointment for an assigned lead on any active teammate's calendar when Admin's caller-booking setting is on. They can view busy intervals (start/end only) for a selected agent and day; other lead details are not exposed. Bookings cannot overlap scheduled CRM appointments on the selected calendar. Back-to-back bookings are allowed. Basic Agents cannot cancel/reschedule appointments or overwrite existing lead status, assignment or next action while booking. The audit/activity records identify the booking user and destination calendar. Google Calendar events and invitations remain separate; CRM busy checks do not include external calendars.

@@ -10,6 +10,7 @@ import {
 import {
   can,
   capabilityLabels,
+  canBookAppointment,
   additivePatch,
   type Capability,
 } from "@/lib/permissions";
@@ -359,6 +360,34 @@ async function handle(req: NextRequest) {
           user.id,
         ]);
       return json({ ok: true });
+    }
+    if (route === "calendar/team-availability" && method === "POST") {
+      const s = await readState();
+      if (!canBookAppointment(user, s.settings.bookingAllowed))
+        throw new HttpError(403, "Calendar booking is disabled");
+      const b = await req.json();
+      const start = Date.parse(b.start),
+        end = Date.parse(b.end);
+      if (
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        end <= start ||
+        end - start > 32 * 86400000
+      )
+        throw new HttpError(400, "Choose a valid range up to 32 days");
+      if (!s.users.some((u) => u.id === b.assignedTo && !u.disabled))
+        throw new HttpError(400, "Choose an active agent");
+      return json({
+        busy: s.appointments
+          .filter(
+            (a) =>
+              a.assignedTo === b.assignedTo &&
+              a.status === "scheduled" &&
+              Date.parse(a.start) < end &&
+              Date.parse(a.end) > start,
+          )
+          .map((a) => ({ start: a.start, end: a.end })),
+      });
     }
     if (route === "calendar/availability" && method === "POST") {
       ownerOnly(user);
@@ -1102,7 +1131,9 @@ async function handle(req: NextRequest) {
           return { ok: true };
         }
         if (route === "appointments") {
-          requireCapability(user, "manageAppointments");
+          if (method !== "POST") throw new HttpError(405, "Use POST to book");
+          if (!canBookAppointment(user, s.settings.bookingAllowed))
+            throw new HttpError(403, "Calendar booking is disabled");
           const l = s.leads.find((l) => l.id === body.leadId);
           assertLead(user, l);
           if (user.role === "caller" && !s.settings.bookingAllowed)
@@ -1111,8 +1142,8 @@ async function handle(req: NextRequest) {
             end = Date.parse(body.end);
           if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start)
             throw new HttpError(400, "End must be after start");
-          if (!s.users.some((u) => u.id === body.assignedTo))
-            throw new HttpError(400, "Choose an assignee");
+          if (!s.users.some((u) => u.id === body.assignedTo && !u.disabled))
+            throw new HttpError(400, "Choose an active agent");
           try {
             new Intl.DateTimeFormat("en-US", { timeZone: body.timezone });
           } catch {
@@ -1125,6 +1156,21 @@ async function handle(req: NextRequest) {
               throw new HttpError(409, "Appointment ID already used");
             return existing;
           }
+          if (
+            s.appointments.some(
+              (a) =>
+                a.assignedTo === body.assignedTo &&
+                a.status === "scheduled" &&
+                Date.parse(a.start) < end &&
+                Date.parse(a.end) > start,
+            )
+          )
+            throw new HttpError(
+              409,
+              "This agent already has an appointment at that time. Choose another time or agent.",
+            );
+          if (!body.title?.trim())
+            throw new HttpError(400, "Appointment title is required");
           const a = {
             id,
             leadId: l!.id,
@@ -1136,10 +1182,21 @@ async function handle(req: NextRequest) {
             status: "scheduled" as const,
           };
           s.appointments.push(a);
-          l!.status = "Appointment Set";
-          l!.nextAction = a.title;
-          l!.dueAt = a.start;
-          activity(l!.id, "Appointment booked", a.title + " · " + a.start);
+          if (can(user, "manageAppointments")) {
+            l!.status = "Appointment Set";
+            l!.nextAction = a.title;
+            l!.dueAt = a.start;
+          }
+          activity(
+            l!.id,
+            "Appointment booked",
+            a.title +
+              " · " +
+              a.start +
+              " · Calendar: " +
+              s.users.find((u) => u.id === a.assignedTo)!.name,
+          );
+          audit("Booked appointment " + a.id + " on " + a.assignedTo);
           return a;
         }
         if (parts[0] === "appointments" && parts[1] && method === "PATCH") {
@@ -1160,6 +1217,20 @@ async function handle(req: NextRequest) {
               Date.parse(body.end) <= Date.parse(body.start)
             )
               throw new HttpError(400, "Invalid time");
+            if (
+              s.appointments.some(
+                (other) =>
+                  other.id !== a.id &&
+                  other.assignedTo === a.assignedTo &&
+                  other.status === "scheduled" &&
+                  Date.parse(other.start) < Date.parse(body.end) &&
+                  Date.parse(other.end) > Date.parse(body.start),
+              )
+            )
+              throw new HttpError(
+                409,
+                "This agent already has an appointment at that time",
+              );
             a.start = body.start;
             a.end = body.end;
           }

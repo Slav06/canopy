@@ -55,7 +55,12 @@ import {
   detailedMAO,
   matchBuyer,
 } from "@/lib/model";
-import { can, roleLabel, capabilityLabels } from "@/lib/permissions";
+import {
+  can,
+  canBookAppointment,
+  roleLabel,
+  capabilityLabels,
+} from "@/lib/permissions";
 import {
   conditions,
   timelines,
@@ -2314,7 +2319,10 @@ function LeadDetail({
           <Clock3 size={15} />
           Follow up
         </button>
-        <button disabled={!can(user, "manageAppointments")} onClick={onBook}>
+        <button
+          disabled={!canBookAppointment(user, s.settings.bookingAllowed)}
+          onClick={onBook}
+        >
           <CalendarDays size={15} />
           Book appointment
         </button>
@@ -2805,6 +2813,15 @@ function ScheduleModal({
   close: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [calendarAgent, setCalendarAgent] = useState(
+    s.users.some((u) => u.id === lead.assignedTo && !u.disabled)
+      ? lead.assignedTo
+      : user.id,
+  );
+  const [calendarDay, setCalendarDay] = useState(
+    localInput(lead.dueAt).slice(0, 10) ||
+      new Date().toLocaleDateString("en-CA"),
+  );
   const requestId = useRef(uid());
   const [err, setErr] = useState("");
   return (
@@ -2874,6 +2891,7 @@ function ScheduleModal({
               name="start"
               required
               defaultValue={localInput(lead.dueAt)}
+              onChange={(e) => setCalendarDay(e.target.value.slice(0, 10))}
             />
           </Field>
           {kind === "appointment" && (
@@ -2891,17 +2909,25 @@ function ScheduleModal({
               />
             </Field>
           )}
-          <Field label="Assigned to">
+          <Field
+            label={
+              kind === "appointment"
+                ? "Book on agent’s calendar"
+                : "Assigned to"
+            }
+          >
             <select
               name="assignedTo"
-              defaultValue={kind === "followup" ? user.id : lead.assignedTo}
+              defaultValue={kind === "followup" ? user.id : calendarAgent}
+              onChange={(e) => setCalendarAgent(e.target.value)}
             >
               {s.users
                 .filter(
                   (u) =>
-                    kind === "appointment" ||
-                    user.role === "owner" ||
-                    u.id === user.id,
+                    !u.disabled &&
+                    (kind === "appointment" ||
+                      user.role === "owner" ||
+                      u.id === user.id),
                 )
                 .map((u) => (
                   <option value={u.id} key={u.id}>
@@ -2922,6 +2948,9 @@ function ScheduleModal({
             </Field>
           )}
         </div>
+        {kind === "appointment" && (
+          <TeamBusy assignedTo={calendarAgent} day={calendarDay} />
+        )}
         {kind === "followup" && (
           <Field label="Notes">
             <textarea name="notes" rows={3} />
@@ -3864,6 +3893,58 @@ function Buyers({ s, act }: { s: State; act: Act }) {
     </>
   );
 }
+function TeamBusy({ assignedTo, day }: { assignedTo: string; day: string }) {
+  const [busy, setBusy] = useState<{ start: string; end: string }[]>([]);
+  const [status, setStatus] = useState("Loading calendar…");
+  useEffect(() => {
+    let active = true;
+    const start = new Date(day + "T00:00:00");
+    const end = new Date(day + "T00:00:00");
+    end.setDate(end.getDate() + 1);
+    if (!assignedTo || !Number.isFinite(start.getTime())) return;
+    setStatus("Loading calendar…");
+    api("calendar/team-availability", "POST", {
+      assignedTo,
+      start: start.toISOString(),
+      end: end.toISOString(),
+    })
+      .then((r) => {
+        if (active) {
+          setBusy(r.busy);
+          setStatus("");
+        }
+      })
+      .catch((e) => {
+        if (active) setStatus(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [assignedTo, day]);
+  return (
+    <div className="inline-alert" role="status">
+      <div>
+        <strong>Agent availability · {day}</strong>
+        <p>
+          Times below use your browser’s local timezone. CRM bookings only;
+          external calendar events are not included.
+        </p>
+        {status ? (
+          <p>{status}</p>
+        ) : busy.length ? (
+          busy.map((a, i) => (
+            <p key={i}>
+              Busy: {time(a.start)} – {time(a.end)}
+            </p>
+          ))
+        ) : (
+          <p>No CRM appointments booked for this day.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CalendarView({
   s,
   user,
@@ -3883,6 +3964,10 @@ function CalendarView({
   const [calendarId, setCalendarId] = useState("");
   const [availability, setAvailability] = useState("");
   const [editing, setEditing] = useState<string>();
+  const [teamAgent, setTeamAgent] = useState(user.id);
+  const [teamDay, setTeamDay] = useState(
+    new Date().toLocaleDateString("en-CA"),
+  );
   const [showCanceled, setShowCanceled] = useState(false);
   const appointments = s.appointments
     .filter((a) => showCanceled || a.status !== "canceled")
@@ -3895,7 +3980,10 @@ function CalendarView({
         action={
           <button
             className="primary"
-            disabled={!s.leads.length || !can(user, "manageAppointments")}
+            disabled={
+              !s.leads.length ||
+              !canBookAppointment(user, s.settings.bookingAllowed)
+            }
             onClick={() => onBook(s.leads[0].id)}
           >
             <Plus size={16} />
@@ -3903,6 +3991,36 @@ function CalendarView({
           </button>
         }
       />
+      {canBookAppointment(user, s.settings.bookingAllowed) && (
+        <section className="panel" style={{ padding: 20, marginBottom: 20 }}>
+          <h2>Team calendars</h2>
+          <p>Choose an agent and day to see their booked times.</p>
+          <div className="form-grid">
+            <Field label="Agent calendar">
+              <select
+                value={teamAgent}
+                onChange={(e) => setTeamAgent(e.target.value)}
+              >
+                {s.users
+                  .filter((u) => !u.disabled)
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <Field label="Calendar day">
+              <input
+                type="date"
+                value={teamDay}
+                onChange={(e) => setTeamDay(e.target.value)}
+              />
+            </Field>
+          </div>
+          <TeamBusy assignedTo={teamAgent} day={teamDay} />
+        </section>
+      )}
       <div className="calendar-toolbar panel">
         <div>
           <h2>CRM-managed calendar</h2>
@@ -4003,7 +4121,7 @@ function CalendarView({
                 >
                   Reschedule
                 </button>
-                {a.status !== "canceled" && (
+                {a.status !== "canceled" && can(user, "manageAppointments") && (
                   <button
                     onClick={() =>
                       act(
