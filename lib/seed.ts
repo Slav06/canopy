@@ -250,6 +250,10 @@ export function seed(): State {
         arvSource:
           "Illustrative estimate only; attach verified evidence before relying on this value.",
         evidenceType: "Automated estimate",
+        subjectSqft: 0,
+        subjectBeds: 0,
+        subjectBaths: 0,
+        comps: [],
         buyerPercent: 70,
         repairs: [
           { label: "Interior and paint", amount: 12000 },

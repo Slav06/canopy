@@ -1355,6 +1355,10 @@ async function handle(req: NextRequest) {
             arv: 0,
             arvSource: "",
             evidenceType: "Unverified",
+            subjectSqft: 0,
+            subjectBeds: 0,
+            subjectBaths: 0,
+            comps: [],
             buyerPercent: 70,
             repairs: [],
             contingency: 0,
@@ -1400,6 +1404,9 @@ async function handle(req: NextRequest) {
           const numeric = [
             "asking",
             "arv",
+            "subjectSqft",
+            "subjectBeds",
+            "subjectBaths",
             "buyerPercent",
             "contingency",
             "targetFee",
@@ -1444,6 +1451,39 @@ async function handle(req: NextRequest) {
                 )
               )
                 throw new HttpError(400, "Invalid repairs");
+            } else if (k === "comps") {
+              if (
+                !Array.isArray(body[k]) ||
+                body[k].length > 20 ||
+                body[k].some(
+                  (c: Record<string, unknown>) =>
+                    !c ||
+                    typeof c.id !== "string" ||
+                    c.id.length > 100 ||
+                    typeof c.address !== "string" ||
+                    c.address.length > 300 ||
+                    typeof c.soldDate !== "string" ||
+                    c.soldDate.length > 10 ||
+                    (c.soldDate !== "" &&
+                      (!/^\d{4}-\d{2}-\d{2}$/.test(c.soldDate) ||
+                        Number.isNaN(Date.parse(c.soldDate)) ||
+                        new Date(c.soldDate).toISOString().slice(0, 10) !==
+                          c.soldDate ||
+                        c.soldDate > new Date().toISOString().slice(0, 10))) ||
+                    !["soldPrice", "sqft", "beds", "baths", "distanceMiles"].every(
+                      (key) =>
+                        typeof c[key] === "number" &&
+                        Number.isFinite(c[key]) &&
+                        c[key] >= 0,
+                    ) ||
+                    typeof c.source !== "string" ||
+                    c.source.length > 2000 ||
+                    !["strong", "typical", "weak"].includes(
+                      String(c.similarity),
+                    ),
+                )
+              )
+                throw new HttpError(400, "Invalid sold comparable sales");
             } else throw new HttpError(400, "Field not editable");
           }
           if (body.stage && !stages.includes(body.stage))

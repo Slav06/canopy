@@ -100,6 +100,18 @@ export type Appointment = {
   calendarId?: string;
 };
 export type Repair = { label: string; amount: number };
+export type SoldComp = {
+  id: string;
+  address: string;
+  soldDate: string;
+  soldPrice: number;
+  sqft: number;
+  beds: number;
+  baths: number;
+  distanceMiles: number;
+  similarity: "strong" | "typical" | "weak";
+  source: string;
+};
 export type Deal = {
   id: string;
   leadId: string;
@@ -108,6 +120,10 @@ export type Deal = {
   arv: number;
   arvSource: string;
   evidenceType: string;
+  subjectSqft?: number;
+  subjectBeds?: number;
+  subjectBaths?: number;
+  comps?: SoldComp[];
   buyerPercent: number;
   repairs: Repair[];
   contingency: number;
@@ -236,6 +252,46 @@ export function detailedMAO(d: Deal) {
     d.buyerProfit -
     d.targetFee
   );
+}
+export function soldCompARV(
+  d: Pick<Deal, "subjectSqft" | "comps">,
+) {
+  const subjectSqft = Number(d.subjectSqft ?? 0);
+  if (!Number.isFinite(subjectSqft) || subjectSqft <= 0) return null;
+  const weights = { strong: 1.25, typical: 1, weak: 0.6 } as const;
+  const today = new Date().toISOString().slice(0, 10);
+  const comps = (d.comps ?? []).filter(
+    (c) =>
+      !!c.address.trim() &&
+      !!c.source.trim() &&
+      c.soldPrice > 0 &&
+      c.sqft > 0 &&
+      c.soldDate <= today &&
+      /^\d{4}-\d{2}-\d{2}$/.test(c.soldDate) &&
+      !Number.isNaN(Date.parse(c.soldDate)) &&
+      new Date(c.soldDate).toISOString().slice(0, 10) === c.soldDate &&
+      Object.hasOwn(weights, c.similarity) &&
+      Number.isFinite(c.soldPrice / c.sqft),
+  );
+  if (!comps.length) return null;
+  const totalWeight = comps.reduce(
+    (sum, c) => sum + weights[c.similarity],
+    0,
+  );
+  const averagePpsf =
+    comps.reduce(
+      (sum, c) => sum + (c.soldPrice / c.sqft) * weights[c.similarity],
+      0,
+    ) / totalWeight;
+  const toHundred = (n: number) => Math.round(n / 100) * 100;
+  const values = comps.map((c) => (c.soldPrice / c.sqft) * subjectSqft);
+  return {
+    arv: toHundred(averagePpsf * subjectSqft),
+    pricePerSqft: Math.round(averagePpsf * 100) / 100,
+    low: toHundred(Math.min(...values)),
+    high: toHundred(Math.max(...values)),
+    count: comps.length,
+  };
 }
 export function matchBuyer(b: Buyer, p: Property, d: Deal) {
   const reasons: string[] = [];

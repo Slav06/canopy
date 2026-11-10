@@ -5,7 +5,7 @@ import { seed } from "../lib/seed";
 import { publicState } from "../lib/store";
 import { commitImport, inspectImport, normalizePhone } from "../lib/imports";
 import { callingEligibility, verifyWebhook } from "../lib/dialerr";
-import { sellerMAO, detailedMAO } from "../lib/model";
+import { sellerMAO, detailedMAO, soldCompARV } from "../lib/model";
 import {
   passwordHash,
   verifyPassword,
@@ -140,6 +140,45 @@ test("underwriting methods stay separate and expected money is not collected", (
   assert.equal(detailedMAO(d), 165000);
   assert.equal(d.expectedFee, 12000);
   assert.equal(d.collectedFee, 0);
+});
+test("sold comps estimate ARV from weighted closed-sale price per square foot", () => {
+  const estimate = soldCompARV({
+    subjectSqft: 1500,
+    comps: [
+      {
+        id: "comp-1",
+        address: "10 Nearby Ave",
+        soldDate: "2025-08-15",
+        soldPrice: 200000,
+        sqft: 1000,
+        beds: 3,
+        baths: 2,
+        distanceMiles: 0.2,
+        similarity: "strong",
+        source: "County record",
+      },
+      {
+        id: "comp-2",
+        address: "12 Nearby Ave",
+        soldDate: "2025-09-15",
+        soldPrice: 242000,
+        sqft: 1100,
+        beds: 3,
+        baths: 2,
+        distanceMiles: 0.4,
+        similarity: "typical",
+        source: "MLS closed sale",
+      },
+    ],
+  });
+  assert.deepEqual(estimate, {
+    arv: 313300,
+    pricePerSqft: 208.89,
+    low: 300000,
+    high: 330000,
+    count: 2,
+  });
+  assert.equal(soldCompARV({ subjectSqft: 0, comps: [] }), null);
 });
 test("password hashes and signed expiring sessions reject tampering", () => {
   const hash = passwordHash("a strong test password");

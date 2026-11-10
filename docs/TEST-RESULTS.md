@@ -17,7 +17,7 @@ Browser checks on the local demo:
 - Calling screen opened the assigned seller, script, qualification fields and notes.
 - Property note was edited in the browser, autosaved and confirmed persisted in the file after reload. The HTTP test independently verifies the same persistence path.
 - Explicit Call started a labeled simulator. Navigating to Today retained the same simulated active call in the persistent session panel. Simulation was ended deliberately; no phone connection was made.
-- Deals rendered asking price, evidence classification, ARV source, repairs, separate method tabs, screening MAO ($136,500 for the demo inputs), actual vs expected fees and matching buyer reasons.
+- Deals rendered asking price, evidence classification, ARV source, repairs, separate method tabs, screening MAO ($136,500 for the demo inputs), actual vs expected fees and matching buyer reasons. Unit coverage also checks sold-comp weighting, price-per-square-foot ARV, comp range and missing subject-area behavior.
 - Final Today screenshot is `docs/preview-desktop.jpg`.
 
 The development server restarted when next.config changed; one existing browser tab stopped reconnecting even though loopback HTTP still returned 200. A fresh preview tab loaded successfully. Initial Turbopack production compilation was blocked by a sandbox helper socket restriction; the webpack build passed. No security settings or provider permissions were weakened to resolve these tool limits.

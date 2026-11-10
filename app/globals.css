@@ -1707,6 +1707,81 @@ dialog p {
 .repair-items > button {
   font-size: 11px;
 }
+.sold-comps .section-head {
+  align-items: flex-start;
+  gap: 12px;
+}
+.sold-comps .section-head p {
+  font-size: 10px;
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.comp-card {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcf9;
+}
+.comp-card-head,
+.comp-estimate {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.comp-card-head {
+  margin-bottom: 10px;
+  color: var(--text);
+  font-size: 11px;
+}
+.comp-card .field {
+  min-width: 0;
+}
+.comp-card .field input,
+.comp-card .field select {
+  min-width: 0;
+}
+.comp-psf {
+  margin: 6px 0 0;
+  color: #58734a;
+  font-size: 10px;
+}
+.comp-estimate {
+  margin: 14px 0;
+  padding: 15px;
+  border: 1px solid #dfead5;
+  border-radius: 8px;
+  background: #edf4e7;
+  color: #607d4e;
+}
+.comp-estimate > div > span,
+.comp-estimate > div > small {
+  display: block;
+}
+.comp-estimate > div > span {
+  font-size: 11px;
+  font-weight: 600;
+}
+.comp-estimate strong {
+  display: block;
+  margin: 5px 0;
+  font-size: 20px;
+}
+.comp-estimate small {
+  font-size: 9px;
+  color: #718c61;
+  line-height: 1.6;
+}
+.comp-estimate button {
+  flex: 0 0 auto;
+}
+.comp-estimate button:disabled,
+.sold-comps > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
 .mao {
   display: flex;
   justify-content: space-between;

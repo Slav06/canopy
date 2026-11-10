@@ -30,7 +30,7 @@ The demo uses `.data/demo.json` with fictional seller/property records and reser
 - Use a versioned owner-editable seller script or compact questionnaire; autosave answers/notes; record outcomes; schedule reminders or appointments.
 - Keep call reports, notes and CRM activity with each property. Messaging and calling use the signed-in Dialerr toolbar; there is no Dialerr API synchronization.
 - Keep the official floating Dialerr toolbar mounted across internal navigation. Agents sign in inside it; CRM role restrictions and vendor account permissions are separate.
-- Underwrite with separate screening and detailed-cost calculators; record offers, contract dates, repair lines, title issues, expected/collected fees, JV splits and expenses.
+- Underwrite with sold-comp ARV estimates and separate screening/detailed-cost MAO calculators; record offers, contract dates, repair lines, title issues, expected/collected fees, JV splits and expenses. Sold prices are entered from verified sources; no automatic comp feed is connected.
 - Save buyer criteria and funding evidence, review initial matches and download a deal package draft.
 - Store private documents/photos, export owner records, inspect audit history and configure calling windows.
 
@@ -135,4 +135,4 @@ Required Basic Agent call reports: [workflow and toolbar limitations](docs/POST-
 
 ## Hosted team deployment
 
-[Free test deployment and first Admin setup](docs/DEPLOYMENT.md) uses Render Free plus Neon Free through the root render.yaml. Uploads are disabled on ephemeral hosts. The paid alternative is retained in render.production.yaml. Nothing is activated merely by pushing this repository.
+[Vercel deployment and first Admin setup](docs/VERCEL-DEPLOYMENT.md) uses the existing Vercel project with Neon PostgreSQL. Vercel Hobby is limited to noncommercial use, so confirm the project plan permits Canopy's business use before enabling agents. Private uploads stay disabled on the temporary function filesystem. The earlier Render setup is documented in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). No paid services are activated by this repository.

@@ -46,6 +46,7 @@ import {
   User,
   Lead,
   Deal,
+  SoldComp,
   Buyer,
   CallReview,
   statuses,
@@ -54,6 +55,7 @@ import {
   sellerMAO,
   detailedMAO,
   matchBuyer,
+  soldCompARV,
 } from "@/lib/model";
 import {
   can,
@@ -3408,7 +3410,14 @@ function DealEditor({
   act: Act;
   prepare: (text: string) => void;
 }) {
-  const [draft, setDraft] = useState(d);
+  const initialDraft: Deal = {
+    ...d,
+    subjectSqft: d.subjectSqft ?? 0,
+    subjectBeds: d.subjectBeds ?? 0,
+    subjectBaths: d.subjectBaths ?? 0,
+    comps: d.comps ?? [],
+  };
+  const [draft, setDraft] = useState(initialDraft);
   const [saved, setSaved] = useState("Saved");
   const [method, setMethod] = useState("screening");
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -3419,6 +3428,15 @@ function DealEditor({
   )!;
   const p = s.properties.find((p) => p.id === l.propertyId)!;
   const c = s.contacts.find((c) => c.id === l.contactId)!;
+  const compEstimate = soldCompARV(draft);
+  const comps = draft.comps ?? [];
+  function updateComp(id: string, patch: Partial<SoldComp>) {
+    update({
+      comps: comps.map((comp) =>
+        comp.id === id ? { ...comp, ...patch } : comp,
+      ),
+    });
+  }
   function update(patch: Partial<Deal>) {
     setDraft((prev) => ({ ...prev, ...patch }));
     setSaved("Saving…");
@@ -3517,6 +3535,7 @@ function DealEditor({
               "Reported price range",
               "Asking price",
               "Automated estimate",
+            "User-entered sold comps",
             ].map((x) => (
               <option key={x}>{x}</option>
             ))}
@@ -3534,6 +3553,195 @@ function DealEditor({
             {numeric("closingCosts", "Buyer closing costs")}
           </>
         )}
+      </div>
+      <div className="repair-items sold-comps">
+        <div className="section-head">
+          <div>
+            <h3>Nearby sold comparables · ARV</h3>
+            <p>
+              Enter verified closed sales from your MLS or public records. Canopy
+              does not invent or automatically fetch sold prices.
+            </p>
+          </div>
+          <Badge>{compEstimate?.count ?? 0} usable</Badge>
+        </div>
+        <div className="form-grid">
+          {numeric("subjectSqft", "Subject living area (sq ft)")}
+          {numeric("subjectBeds", "Subject bedrooms")}
+          {numeric("subjectBaths", "Subject bathrooms")}
+        </div>
+        {comps.map((comp, i) => (
+          <div className="comp-card" key={comp.id}>
+            <div className="comp-card-head">
+              <strong>Sold comp {i + 1}</strong>
+              <button
+                className="icon-button"
+                aria-label={`Remove sold comp ${i + 1}`}
+                onClick={() =>
+                  update({ comps: comps.filter((x) => x.id !== comp.id) })
+                }
+              >
+                <X size={15} />
+              </button>
+            </div>
+            <div className="form-grid">
+              <Field label="Comparable address">
+                <input
+                  value={comp.address}
+                  onChange={(e) =>
+                    updateComp(comp.id, { address: e.target.value })
+                  }
+                />
+              </Field>
+              <Field label="Closed sale date">
+                <input
+                  type="date"
+                  value={comp.soldDate}
+                  onChange={(e) =>
+                    updateComp(comp.id, { soldDate: e.target.value })
+                  }
+                />
+              </Field>
+              <Field label="Verified sold price">
+                <input
+                  type="number"
+                  min="0"
+                  value={comp.soldPrice}
+                  onChange={(e) =>
+                    updateComp(comp.id, { soldPrice: Number(e.target.value) })
+                  }
+                />
+              </Field>
+              <Field label="Living area (sq ft)">
+                <input
+                  type="number"
+                  min="0"
+                  value={comp.sqft}
+                  onChange={(e) =>
+                    updateComp(comp.id, { sqft: Number(e.target.value) })
+                  }
+                />
+              </Field>
+              <Field label="Bedrooms">
+                <input
+                  type="number"
+                  min="0"
+                  value={comp.beds}
+                  onChange={(e) =>
+                    updateComp(comp.id, { beds: Number(e.target.value) })
+                  }
+                />
+              </Field>
+              <Field label="Bathrooms">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={comp.baths}
+                  onChange={(e) =>
+                    updateComp(comp.id, { baths: Number(e.target.value) })
+                  }
+                />
+              </Field>
+              <Field label="Distance from subject (miles)">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={comp.distanceMiles}
+                  onChange={(e) =>
+                    updateComp(comp.id, {
+                      distanceMiles: Number(e.target.value),
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Similarity weight">
+                <select
+                  value={comp.similarity}
+                  onChange={(e) =>
+                    updateComp(comp.id, {
+                      similarity: e.target.value as SoldComp["similarity"],
+                    })
+                  }
+                >
+                  <option value="strong">Strong · 1.25×</option>
+                  <option value="typical">Typical · 1.00×</option>
+                  <option value="weak">Weak · 0.60×</option>
+                </select>
+              </Field>
+              <Field label="Sale source / record">
+                <input
+                  placeholder="MLS, county record, source URL or notes"
+                  value={comp.source}
+                  onChange={(e) =>
+                    updateComp(comp.id, { source: e.target.value })
+                  }
+                />
+              </Field>
+            </div>
+            <p className="comp-psf">
+              {comp.soldPrice > 0 && comp.sqft > 0
+                ? `${money(comp.soldPrice / comp.sqft)} per sq ft`
+                : "Enter a sold price and living area to use this sale."}
+            </p>
+          </div>
+        ))}
+        <button
+          disabled={comps.length >= 20}
+          onClick={() =>
+            update({
+              comps: [
+                ...comps,
+                {
+                  id: uid(),
+                  address: "",
+                  soldDate: "",
+                  soldPrice: 0,
+                  sqft: 0,
+                  beds: 0,
+                  baths: 0,
+                  distanceMiles: 0,
+                  similarity: "typical",
+                  source: "",
+                },
+              ],
+            })
+          }
+        >
+          <Plus size={14} />
+          Add sold comp
+        </button>
+        <div className="comp-estimate" aria-live="polite">
+          <div>
+            <span>Weighted sold-comp ARV</span>
+            <strong>{compEstimate ? money(compEstimate.arv) : "Add subject sqft and sales"}</strong>
+            <small>
+              {compEstimate
+                ? `${compEstimate.count} sale${compEstimate.count === 1 ? "" : "s"} · ${money(compEstimate.pricePerSqft)}/sq ft · comp range ${money(compEstimate.low)}–${money(compEstimate.high)}`
+                : "Weighted average sold price per sq ft × subject living area"}
+            </small>
+          </div>
+          <button
+            className="primary"
+            disabled={!compEstimate}
+            onClick={() =>
+              compEstimate &&
+              update({
+                arv: compEstimate.arv,
+                evidenceType: "User-entered sold comps",
+                arvSource: `Weighted sold price per sq ft from ${compEstimate.count} entered comparable sale${compEstimate.count === 1 ? "" : "s"}; verify source records and adjustments.`,
+              })
+            }
+          >
+            Use comp ARV
+          </button>
+        </div>
+        <p className="muted">
+          The MAO below uses the saved ARV until you select “Use comp ARV.”
+          Check sale date, distance, property type, condition, and source before
+          relying on any estimate; this calculator is not an appraisal.
+        </p>
       </div>
       <div className="repair-items">
         <h3>Repair line items</h3>
@@ -3604,8 +3812,8 @@ function DealEditor({
       </div>
       <p className="muted">
         These are separate screening methods. Do not add detailed costs to the
-        percentage method. No verified comps are supplied; Texas estimates are
-        not verified sold prices.
+        percentage method. No automatic sold-data feed is connected; verify the
+        source and closing status of every comp you enter.
       </p>
       <details open>
         <summary>Offer history</summary>
