@@ -16,8 +16,11 @@ function run(args) {
 }
 
 if (process.env.VERCEL_ENV === "production") {
-  if (process.env.WORKSPACE_MODE !== "live")
-    throw new Error("Production Vercel deploy requires WORKSPACE_MODE=live");
+  if (process.env.WORKSPACE_MODE && process.env.WORKSPACE_MODE !== "live")
+    throw new Error("Production Vercel deploy cannot use demo workspace mode");
+  // Vercel Production is always a real workspace. Default this derived mode
+  // instead of requiring a redundant dashboard variable; Preview remains demo.
+  process.env.WORKSPACE_MODE = "live";
   if (!process.env.DATABASE_URL)
     throw new Error("Production Vercel deploy requires DATABASE_URL");
   if ((process.env.SESSION_SECRET?.length ?? 0) < 32)

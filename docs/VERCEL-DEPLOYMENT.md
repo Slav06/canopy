@@ -12,7 +12,7 @@ Add these under the project's **Production** environment only. Enter secret valu
 
 | Name | Value |
 | --- | --- |
-| `WORKSPACE_MODE` | `live` |
+| `WORKSPACE_MODE` | Optional in Production; the build defaults it to `live`. If set explicitly, use `live`. |
 | `DATABASE_URL` | Neon PostgreSQL **pooled** connection string for `canopy-crm-test` |
 | `APP_ORIGIN` | `https://canopy-sepia-delta.vercel.app` |
 | `SESSION_SECRET` | Random secret of at least 32 characters |
