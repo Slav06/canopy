@@ -13,7 +13,6 @@ try:
  req('demo/role',{'role':'caller'});initial=req('state')[1]['state'];note=next(l for l in initial['leads'] if l['id']=='l1')['notes'];answers=next(l for l in initial['leads'] if l['id']=='l1')['answers']
  code,r=req('call-reviews/start',{'id':'review-test-1','leadId':'l1','source':'manual','ended':True});check('call form is persisted as required',code==200 and r['phase']=='required')
  check('incomplete form blocks Next',req('call-reviews/ready',{})[0]==409)
- check('incomplete form blocks next-call preparation',req('dialerr/prepare',{'leadId':'l3'})[0]==409)
  check('another call cannot replace pending form',req('call-reviews/start',{'id':'review-other','leadId':'l3','ended':True})[0]==409)
  check('incomplete submission rejected by server',req('call-reviews/review-test-1/submit',{'leadId':'l1','answers':{'outcome':'Seller conversation'}})[0]==400)
  draft={'outcome':'Seller conversation','sellerName':'Daniel Brooks','sellerPhone':'+12025550101','sellerAddress':'1842 Willow Creek Drive, Fort Worth, TX 76107','condition':'BIG RENOVATION','conditionDetails':'Seller reports roof repair needed','motivation':'Inherited property','askingPrice':'Unknown','timeline':'ASAP','appointmentSet':'Yes','summary':'Seller discussed condition and next steps'}

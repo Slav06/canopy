@@ -253,8 +253,8 @@ try {
   cookie = callerLogin.cookie;
   await request("contacts/" + first.data.contactId, "PATCH", { dnc: true });
   pass(
-    "live opt-out blocks calling",
-    (await request("dialerr/prepare", "POST", { leadId: id })).status === 403,
+    "CRM exposes no call-start API",
+    (await request("dialerr/prepare", "POST", { leadId: id })).status === 410,
   );
   pass(
     "toolbar-only mode disables CRM message API",

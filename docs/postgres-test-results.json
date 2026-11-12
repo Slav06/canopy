@@ -20,7 +20,7 @@
     "live caller cannot create team accounts",
     "concurrent independent updates both persist in PostgreSQL",
     "live appointment retries are idempotent",
-    "live opt-out blocks calling",
+    "CRM exposes no call-start API",
     "toolbar-only mode disables CRM message API",
     "live caller cannot reverse suppression",
     "owner export excludes link hashes",

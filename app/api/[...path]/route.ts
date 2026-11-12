@@ -50,7 +50,7 @@ import {
   normalizePhone,
   addressKey,
 } from "@/lib/imports";
-import { verifyWebhook, eventKey, callingEligibility } from "@/lib/dialerr";
+import { verifyWebhook, eventKey } from "@/lib/dialerr";
 import { encrypt, googleFetch, allowedCalendar } from "@/lib/calendar";
 export const runtime = "nodejs";
 const json = (v: unknown, status = 200) =>
@@ -224,32 +224,12 @@ async function handle(req: NextRequest) {
         },
       });
     }
-    if (route === "dialerr/prepare" && method === "POST") {
-      const b = await req.json();
-      const s = await readState();
-      if (requiresReview(user) && pendingReview(s, user))
-        throw new HttpError(
-          409,
-          "Complete your pending post-call form before the next call",
-        );
-      const eligible = callingEligibility(s, user, b.leadId);
-      if (
-        !demo &&
-        (process.env.LIVE_CALLING_ENABLED !== "true" ||
-          process.env.DIALERR_ROLE_BOUNDARY_VERIFIED !== "true")
-      )
-        throw new HttpError(503, "Live calling is not verified");
-      return json({
-        phone: eligible.phone.number,
-        name: eligible.contact.name,
-        externalId: eligible.lead.id,
-        simulated: demo,
-      });
-    }
+    // Canopy never starts, prepares or loads a call. Calling and messaging
+    // happen only inside the embedded Dialerr panel.
     if (parts[0] === "dialerr" || parts[0] === "messages")
       throw new HttpError(
         410,
-        "Toolbar-only integration. Use calling and messaging inside the embedded Dialerr toolbar.",
+        "Use calling and messaging inside the embedded Dialerr panel.",
       );
     if (route === "export" && method === "GET") {
       requireCapability(user, "exportData");

@@ -25,7 +25,7 @@ try:
     check('note survives independent GET',next(l for l in req('state')[1]['state']['leads'] if l['id']=='l1')['notes'].endswith('HTTP persistence test'))
     req('demo/role','POST',{'role':'owner'})
     check('same seller other property keeps notes',next(l for l in req('state')[1]['state']['leads'] if l['id']=='l4')['notes']!='HTTP persistence test')
-    check('DNC contact call action blocked',req('dialerr/prepare','POST',{'leadId':'l5'})[0]==403)
+    check('CRM exposes no call-start API',req('dialerr/prepare','POST',{'leadId':'l5'})[0]==410)
     ap={'id':'http-check-appointment','leadId':'l1','assignedTo':'owner','title':'Test appointment','start':'2026-11-06T15:00:00Z','end':'2026-11-06T16:00:00Z','timezone':'America/Chicago'}
     check('appointment save accepted',req('appointments','POST',ap)[0]==200)
     req('appointments','POST',ap)

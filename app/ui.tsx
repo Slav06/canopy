@@ -22,7 +22,6 @@ import {
   Menu,
   MoreHorizontal,
   Phone,
-  PhoneOff,
   Plus,
   Search,
   Settings,
@@ -82,8 +81,6 @@ type Integration = {
   calendar: boolean;
 };
 type DialerrAPI = {
-  loadLead: (lead: { phone: string; name: string; externalId: string }) => void;
-  startCall: (phone: string, name: string) => void;
   inCall: boolean;
   float: () => boolean;
   open: () => void;
@@ -399,18 +396,15 @@ export default function CRM() {
   const [myLink, setMyLink] = useState("");
   const [modal, setModal] = useState("");
   const [sidebar, setSidebar] = useState(false);
-  const [call, setCall] = useState<{
-    leadId: string;
-    name: string;
-    phone: string;
-    status: string;
-  } | null>(null);
-  const callLock = useRef(false);
+  // True while the Dialerr panel reports a connected call. Calls are placed
+  // only inside that panel; Canopy never starts or prepares one.
+  const [inCall, setInCall] = useState(false);
   const [mobileTab, setMobileTab] = useState("Lead");
   const scroll = useRef<Record<string, number>>({});
   const main = useRef<HTMLElement>(null);
   const reportId = useRef<string | undefined>(undefined);
-  const preparedLead = useRef<string | undefined>(undefined);
+  // The lead open on screen, so a post-call form attaches to it.
+  const openLeadId = useRef<string | undefined>(undefined);
   const reportQueue = useRef<Promise<unknown>>(Promise.resolve());
   async function refresh() {
     try {
@@ -465,11 +459,14 @@ export default function CRM() {
   }, [notice]);
   useEffect(() => {
     if (!integration.embedEnabled) return;
+    // The docked panel takes ~440px. On a phone that is the whole screen, so
+    // it starts closed there and opens from its launcher or the Dialer tab.
+    const roomy = window.innerWidth >= 1024;
     const existing = document.getElementById("dialerr-sdk");
     if (existing) {
       if (window.Dialerr && !window.Dialerr.inCall) {
         window.Dialerr.float();
-        window.Dialerr.open();
+        if (roomy) window.Dialerr.open();
       }
       return;
     }
@@ -477,42 +474,42 @@ export default function CRM() {
     script.id = "dialerr-sdk";
     script.src = "https://dialerr.com/embed.js";
     if (integration.dialerrKey) script.dataset.key = integration.dialerrKey;
+    // "dialer" is Dialerr's full dashboard column, docked full-height on the
+    // right. The embed narrows the page to make room, so it covers nothing.
     script.dataset.mode = "floating";
-    script.dataset.surface = "toolbar";
+    script.dataset.surface = "dialer";
     script.dataset.position = "bottom-right";
-    script.dataset.width = "400";
-    script.dataset.height = "640";
-    script.dataset.autoOpen = "true";
+    script.dataset.autoOpen = roomy ? "true" : "false";
     script.onerror = () =>
       setError(
-        "Dialerr toolbar could not load. Check the connection or reload the page.",
+        "Dialerr panel could not load. Check the connection or reload the page.",
       );
     document.body.appendChild(script);
-    const connected = () =>
-      setCall((c) =>
-        c
-          ? { ...c, status: "Connected" }
-          : {
-              leadId: "",
-              name: "Dialerr call",
-              phone: "Managed inside toolbar",
-              status: "Connected",
-            },
-      );
-    const ended = () => {
-      callLock.current = false;
-      setCall((c) =>
-        c ? { ...c, status: "Call ended · record the outcome in Canopy" } : c,
-      );
-    };
+    const connected = () => setInCall(true);
+    const ended = () => setInCall(false);
     const invalid = () => {
-      callLock.current = false;
-      setError("Dialerr session expired. Reconnect before calling.");
+      setInCall(false);
+      setError("Dialerr session expired. Sign in again inside the panel.");
     };
+    // The embed makes room for the docked panel with a margin on <body>, which
+    // viewport-pinned elements (lead drawer, toasts) ignore. Mirror that width
+    // into --dock-space so they stop at the panel's edge instead of under it.
+    const syncDock = () =>
+      document.documentElement.style.setProperty(
+        "--dock-space",
+        document.body.style.marginRight || "0px",
+      );
+    const dockWatch = new MutationObserver(syncDock);
+    dockWatch.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["style"],
+    });
+    syncDock();
     window.addEventListener("dialerr:call_connected", connected);
     window.addEventListener("dialerr:call_ended", ended);
     window.addEventListener("dialerr:auth_invalid", invalid);
     return () => {
+      dockWatch.disconnect();
       window.removeEventListener("dialerr:call_connected", connected);
       window.removeEventListener("dialerr:call_ended", ended);
       window.removeEventListener("dialerr:auth_invalid", invalid);
@@ -528,7 +525,7 @@ export default function CRM() {
         .then(() =>
           api("call-reviews/start", "POST", {
             id,
-            leadId: preparedLead.current,
+            leadId: openLeadId.current,
             source: "browser_event",
           }),
         )
@@ -545,7 +542,7 @@ export default function CRM() {
           if (!existing)
             await api("call-reviews/start", "POST", {
               id,
-              leadId: preparedLead.current,
+              leadId: openLeadId.current,
               source: "browser_event",
               ended: true,
             });
@@ -614,50 +611,12 @@ export default function CRM() {
     selectLead(id);
     navigate(destination);
   }
-  async function startCall(l: Lead) {
-    if (
-      callLock.current ||
-      (call && call.status === "Simulated call in progress")
-    ) {
-      setError("Finish the current call first.");
-      return;
-    }
-    callLock.current = true;
-    try {
-      const d = await api("dialerr/prepare", "POST", { leadId: l.id });
-      if (d.simulated) {
-        throw Error(
-          "CRM demo records cannot be dialed. Sign into the toolbar and use an approved test number manually.",
-        );
-      } else {
-        if (!window.Dialerr)
-          throw Error(
-            "Dialerr is disconnected. Wait for the panel to connect.",
-          );
-        if (window.Dialerr.inCall) throw Error("Agent is already in a call");
-        preparedLead.current = l.id;
-        window.Dialerr.loadLead(d);
-        // Calls begin only when the agent presses Call inside the toolbar.
-        callLock.current = false;
-        setCall({
-          leadId: l.id,
-          name: d.name,
-          phone: d.phone,
-          status: "Lead loaded · press Call in the Dialerr toolbar",
-        });
-      }
-      navigate("Calling");
-      setSelected(l.id);
-    } catch (e) {
-      callLock.current = false;
-      setError((e as Error).message);
-    }
-  }
   const c = (l: Lead) => s!.contacts.find((c) => c.id === l.contactId)!;
   const p = (l: Lead) => s!.properties.find((p) => p.id === l.propertyId)!;
   const u = (id: string) =>
     s?.users.find((u) => u.id === id)?.name ?? "Unassigned";
   const chosen = s?.leads.find((l) => l.id === selected);
+  openLeadId.current = chosen?.id;
   const visible =
     s?.leads.filter((l) => {
       const contact = c(l),
@@ -814,7 +773,7 @@ export default function CRM() {
                 {n.name === "Today" && overdue.length > 0 && (
                   <span className="nav-count">{overdue.length}</span>
                 )}
-                {n.name === "Calling" && call && <i className="live-dot" />}
+                {n.name === "Calling" && inCall && <i className="live-dot" />}
               </button>
             ))}
         </nav>
@@ -1007,7 +966,7 @@ export default function CRM() {
                       }}
                     >
                       <Phone size={16} />
-                      Start calling <ArrowRight size={16} />
+                      Open call queue <ArrowRight size={16} />
                     </button>
                   </div>
                 </div>
@@ -1535,7 +1494,6 @@ export default function CRM() {
                     user={user}
                     act={act}
                     onClose={() => setSelected(undefined)}
-                    onCall={() => startCall(chosen)}
                     onFollow={() => setModal("followup")}
                     onBook={() => setModal("appointment")}
                   />
@@ -1546,7 +1504,7 @@ export default function CRM() {
               <>
                 <PageHead
                   title="Calling workspace"
-                  description="Work your queue here. Dialerr floats in the bottom-right corner."
+                  description="Work your queue here. Place calls in the Dialerr panel on the right."
                 />
                 <div className="mobile-tabs">
                   {["Queue", "Lead", "Dialer"].map((x) => (
@@ -1620,8 +1578,7 @@ export default function CRM() {
                         s={s}
                         user={user}
                         act={act}
-                        onCall={() => startCall(chosen)}
-                        onFollow={() => setModal("followup")}
+                            onFollow={() => setModal("followup")}
                         onBook={() => setModal("appointment")}
                         onNext={() => {
                           const i = active.findIndex((l) => l.id === chosen.id);
@@ -1631,7 +1588,7 @@ export default function CRM() {
                     ) : (
                       <Empty
                         title="Choose a seller to get started"
-                        text="Open a lead from your queue. Calling begins only when you press Call."
+                        text="Open a lead from your queue. Place the call in the Dialerr panel."
                       />
                     )}
                   </section>
@@ -1787,14 +1744,14 @@ export default function CRM() {
                     <div className="integration-icon">
                       <Phone size={24} />
                     </div>
-                    <h2>Floating Dialerr toolbar</h2>
+                    <h2>Dialerr dialer panel</h2>
                     <Badge tone="green">
-                      Embedded · sign in inside toolbar
+                      Docked right · sign in inside panel
                     </Badge>
                     <p>
-                      The official Dialerr toolbar stays mounted while you
-                      navigate Canopy. Sign into your Dialerr account inside the
-                      panel. Calling and messaging happen in the toolbar.
+                      The full Dialerr dialer stays docked on the right while
+                      you navigate Canopy. Sign into your Dialerr account inside
+                      the panel. Calling and messaging happen only there.
                     </p>
                     <ul className="checklist">
                       <li>
@@ -1886,95 +1843,6 @@ export default function CRM() {
               <span>Acquisitions · Dispositions · Closing</span>
             </footer>
           </main>
-          <div
-            className={
-              "persistent-dialer " +
-              (view === "Calling" ? "on-calling" : "") +
-              (mobileTab === "Dialer" ? " mobile-visible" : "") +
-              (call ? " has-call" : "")
-            }
-            aria-label="Persistent Dialerr session"
-          >
-            <div className="dialer-head">
-              <div className="dialerr-logo">
-                <span>◒</span> Dialerr
-              </div>
-              <Badge tone={mode === "demo" ? "amber" : "green"}>
-                Embedded toolbar
-              </Badge>
-            </div>
-            <div
-              id="dialerr-panel"
-              style={{
-                display: integration.embedEnabled ? "block" : "none",
-                minHeight: 440,
-              }}
-            />
-            {!integration.embedEnabled && (
-              <>
-                <div className="dialer-status">
-                  <span className="status-dot green" />{" "}
-                  {mode === "demo"
-                    ? "Demo agent ready"
-                    : "Dialerr disconnected"}
-                </div>
-                <div className="dialer-avatar">
-                  <Phone size={30} />
-                </div>
-                <h3>{call?.name ?? "Ready when you are"}</h3>
-                <p className="dialer-number">
-                  {call?.phone ?? "Choose a seller from your queue."}
-                </p>
-                <div className="dialer-state" role="status">
-                  {call?.status ?? "No active call"}
-                </div>
-                <div className="keypad" aria-hidden="true">
-                  {"123456789*0#".split("").map((n) => (
-                    <span key={n}>{n}</span>
-                  ))}
-                </div>
-                {call?.status === "Simulated call in progress" ? (
-                  <button
-                    className="end-call"
-                    onClick={() => {
-                      setCall({
-                        ...call,
-                        status: "Simulation ended · record an outcome",
-                      });
-                      callLock.current = false;
-                    }}
-                  >
-                    <PhoneOff size={17} />
-                    End simulation
-                  </button>
-                ) : (
-                  <button
-                    className="primary full"
-                    disabled={
-                      !chosen || (!!chosen && c(chosen).dnc) || mode !== "demo"
-                    }
-                    onClick={() => chosen && startCall(chosen)}
-                  >
-                    <Phone size={16} />
-                    {mode === "demo"
-                      ? "Simulate call"
-                      : "Connect Dialerr first"}
-                  </button>
-                )}
-                <div className="dialer-disclaimer">
-                  <ShieldCheck size={15} />
-                  {mode === "demo"
-                    ? "This is a simulator. No phone connection is made."
-                    : "Live calling remains gated until credentials and permissions are verified."}
-                </div>
-              </>
-            )}
-            {call && view !== "Calling" && (
-              <button className="text-link" onClick={() => navigate("Calling")}>
-                Return to calling <ArrowRight size={14} />
-              </button>
-            )}
-          </div>
         </div>
       </div>
       {s &&
@@ -1995,7 +1863,6 @@ export default function CRM() {
             s={s}
             onComplete={async () => {
               reportId.current = undefined;
-              preparedLead.current = undefined;
               await refresh();
               setNotice(
                 "Post-call form completed. You can move to the next lead.",
@@ -2334,7 +2201,6 @@ function LeadDetail({
   user,
   act,
   onClose,
-  onCall,
   onFollow,
   onBook,
   onNext,
@@ -2345,7 +2211,6 @@ function LeadDetail({
   user: User;
   act: Act;
   onClose?: () => void;
-  onCall: () => void;
   onFollow: () => void;
   onBook: () => void;
   onNext?: () => void;
@@ -2458,10 +2323,6 @@ function LeadDetail({
         </span>
       </div>
       <div className="lead-actions">
-        <button className="primary" disabled={c.dnc} onClick={onCall}>
-          <Phone size={15} />
-          Call
-        </button>
         <button disabled={!can(user, "manageAppointments")} onClick={onFollow}>
           <Clock3 size={15} />
           Follow up

@@ -4108,3 +4108,11 @@ article.lead-card select {
   font-family: ui-monospace, monospace;
   font-size: 11px;
 }
+
+/* Keep viewport-pinned layers clear of the docked Dialerr panel. */
+.detail-overlay {
+  right: var(--dock-space, 0px);
+}
+.toast {
+  right: calc(var(--dock-space, 0px) + 25px);
+}
