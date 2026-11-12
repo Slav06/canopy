@@ -28,8 +28,9 @@ import {
   checkOrigin,
   HttpError,
   signSession,
-  verifyPassword,
-  passwordHash,
+  newAccessKey,
+  accessHash,
+  sessionSeconds,
 } from "@/lib/auth";
 import { readState, mutate, publicState, demo, pool } from "@/lib/store";
 import {
@@ -65,54 +66,74 @@ async function handle(req: NextRequest) {
     const route = parts.join("/");
     const method = req.method;
     if (method !== "GET") checkOrigin(req);
-    if (route === "auth/login" && method === "POST") {
-      if (demo) throw new HttpError(400, "Use the demo role switch");
-      const body = await req.json();
-      const email = boundedString(body.email, 254).toLowerCase();
-      const password = boundedString(body.password, 1024);
-      const limit = await pool().query(
-        `INSERT INTO sessions_rate(key,count,reset_at) VALUES($1,1,now()+interval '15 minutes') ON CONFLICT(key) DO UPDATE SET count=CASE WHEN sessions_rate.reset_at<now() THEN 1 ELSE sessions_rate.count+1 END, reset_at=CASE WHEN sessions_rate.reset_at<now() THEN now()+interval '15 minutes' ELSE sessions_rate.reset_at END RETURNING count`,
-        ["login:" + email],
-      );
-      if (limit.rows[0].count > 10)
-        throw new HttpError(429, "Too many attempts; retry in 15 minutes");
-      const s = await readState();
-      const u = s.users.find((u) => u.email.toLowerCase() === email);
-      if (
-        !u?.passwordHash ||
-        u.disabled ||
-        !verifyPassword(password, u.passwordHash)
-      )
-        throw new HttpError(401, "Email or password is incorrect");
-      (await cookies()).set("canopy_session", signSession(u.id), {
+    // Access is by private link: each person has one unguessable key, set as
+    // a session on first open. There are no emails or passwords to manage.
+    const startSession = async (u: User) =>
+      (await cookies()).set("canopy_session", signSession(u), {
         httpOnly: true,
         sameSite: "lax",
         secure: req.nextUrl.protocol === "https:",
         path: "/",
-        maxAge: 28800,
+        maxAge: sessionSeconds,
       });
+    const activeAdmin = (u: User) =>
+      u.role === "owner" && !!u.accessHash && !u.disabled;
+    if (route === "auth/setup" && method === "GET") {
+      if (demo) return json({ claimable: false });
+      return json({ claimable: !(await readState()).users.some(activeAdmin) });
+    }
+    if (route === "auth/link" && method === "POST") {
+      if (demo) throw new HttpError(400, "Use the demo role switch");
+      const key = boundedString((await req.json()).key, 200);
+      const ip =
+        req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+      const limit = await pool().query(
+        `INSERT INTO sessions_rate(key,count,reset_at) VALUES($1,1,now()+interval '15 minutes') ON CONFLICT(key) DO UPDATE SET count=CASE WHEN sessions_rate.reset_at<now() THEN 1 ELSE sessions_rate.count+1 END, reset_at=CASE WHEN sessions_rate.reset_at<now() THEN now()+interval '15 minutes' ELSE sessions_rate.reset_at END RETURNING count`,
+        ["link:" + ip],
+      );
+      if (limit.rows[0].count > 30)
+        throw new HttpError(429, "Too many attempts; retry in 15 minutes");
+      const hash = accessHash(key);
+      const u = (await readState()).users.find((u) => u.accessHash === hash);
+      if (!u || u.disabled)
+        throw new HttpError(
+          401,
+          "This link is no longer valid. Ask your admin for a new one.",
+        );
+      await startSession(u);
       return json({ ok: true });
+    }
+    if (route === "auth/claim" && method === "POST") {
+      // First visit only: whoever opens a brand-new workspace becomes its Admin.
+      if (demo) throw new HttpError(400, "Use the demo role switch");
+      const name = boundedString((await req.json()).name, 200).trim();
+      if (!name) throw new HttpError(400, "Enter your name");
+      const { key, hash } = newAccessKey();
+      const admin = await mutate((s) => {
+        if (s.users.some(activeAdmin))
+          throw new HttpError(409, "This workspace already has an admin");
+        const u: User = {
+          id: uid(),
+          name,
+          email: "",
+          role: "owner",
+          capabilities: {},
+          accessHash: hash,
+        };
+        s.users.push(u);
+        return u;
+      });
+      await startSession(admin);
+      return json({ key });
     }
     if (route === "health" && method === "GET") {
       try {
         if (demo) return json({ status: "demo" }, 503);
         if ((process.env.SESSION_SECRET?.length ?? 0) < 32)
           return json({ status: "unavailable" }, 503);
+        // "setup" is healthy: the database works and the Admin link is unclaimed.
         const state = await readState();
-        return json(
-          {
-            status: state.users.some(
-              (u) => u.role === "owner" && u.passwordHash && !u.disabled,
-            )
-              ? "ok"
-              : "unavailable",
-          },
-          state.users.some(
-            (u) => u.role === "owner" && u.passwordHash && !u.disabled,
-          )
-            ? 200
-            : 503,
-        );
+        return json({ status: state.users.some(activeAdmin) ? "ok" : "setup" });
       } catch {
         return json({ status: "unavailable" }, 503);
       }
@@ -121,6 +142,25 @@ async function handle(req: NextRequest) {
     if (route === "auth/logout" && method === "POST") {
       (await cookies()).delete("canopy_session");
       return json({ ok: true });
+    }
+    if (route === "auth/new-link" && method === "POST") {
+      // Replace your own link; the old link and every session on it stop working.
+      if (demo) throw new HttpError(400, "Demo roles have no private link");
+      const { key, hash } = newAccessKey();
+      const me = await mutate((s) => {
+        const u = s.users.find((u) => u.id === user.id);
+        if (!u) throw new HttpError(401, "Sign in to continue");
+        u.accessHash = hash;
+        s.audit.push({
+          id: uid(),
+          at: new Date().toISOString(),
+          userId: user.id,
+          action: "Replaced own access link",
+        });
+        return u;
+      });
+      await startSession(me);
+      return json({ key });
     }
     if (route === "demo/role" && method === "POST") {
       if (!demo) throw new HttpError(403, "Demo only");
@@ -541,6 +581,22 @@ async function handle(req: NextRequest) {
           audit("Admin updated permissions for " + member.id);
           return { ok: true };
         }
+        if (
+          parts[0] === "team" &&
+          parts[1] === "users" &&
+          parts[2] &&
+          parts[3] === "link" &&
+          method === "POST"
+        ) {
+          ownerOnly(user);
+          const member = s.users.find((u) => u.id === parts[2]);
+          if (!member || member.role === "owner")
+            throw new HttpError(400, "Select an agent account");
+          const { key, hash } = newAccessKey();
+          member.accessHash = hash;
+          audit("Admin replaced access link for " + member.id);
+          return { id: member.id, name: member.name, key };
+        }
         if (route === "team/users" && method === "POST") {
           ownerOnly(user);
           if (demo)
@@ -548,34 +604,22 @@ async function handle(req: NextRequest) {
               409,
               "Live login accounts require a live workspace. Demo roles are simulated.",
             );
-          const email = boundedString(body.email, 254).trim().toLowerCase();
           const name = boundedString(body.name, 200).trim();
-          const password = boundedString(body.password, 1024);
-          if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-            throw new HttpError(400, "Enter a name and valid email");
-          if (password.length < 14)
-            throw new HttpError(
-              400,
-              "Use a temporary password with 14+ characters",
-            );
-          if (s.users.some((u) => u.email.toLowerCase() === email))
-            throw new HttpError(409, "Email already exists");
-          const member = {
+          if (!name) throw new HttpError(400, "Enter a name");
+          if (s.users.some((u) => u.name.toLowerCase() === name.toLowerCase()))
+            throw new HttpError(409, "Someone with that name already exists");
+          const { key, hash } = newAccessKey();
+          const member: User = {
             id: uid(),
             name,
-            email,
-            role: (body.role === "manager"
-              ? "manager"
-              : "caller") as User["role"],
+            email: "",
+            role: body.role === "manager" ? "manager" : "caller",
             capabilities: {},
-            passwordHash: passwordHash(password),
-            dialerrEmail: body.dialerrEmail
-              ? boundedString(body.dialerrEmail, 254)
-              : undefined,
+            accessHash: hash,
           };
           s.users.push(member);
           audit("Owner created caller " + member.id);
-          return { id: member.id, name, email, role: member.role };
+          return { id: member.id, name, role: member.role, key };
         }
         if (route === "call-reviews/ready") {
           if (requiresReview(user) && pendingReview(s, user))
@@ -1470,7 +1514,13 @@ async function handle(req: NextRequest) {
                         new Date(c.soldDate).toISOString().slice(0, 10) !==
                           c.soldDate ||
                         c.soldDate > new Date().toISOString().slice(0, 10))) ||
-                    !["soldPrice", "sqft", "beds", "baths", "distanceMiles"].every(
+                    ![
+                      "soldPrice",
+                      "sqft",
+                      "beds",
+                      "baths",
+                      "distanceMiles",
+                    ].every(
                       (key) =>
                         typeof c[key] === "number" &&
                         Number.isFinite(c[key]) &&

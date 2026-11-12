@@ -47,13 +47,13 @@ Copy `.env.example` to ignored `.env.local` and populate it locally or use a sec
 node --env-file=.env.local --import tsx db/migrate.ts
 ```
 
-3. Provision users via `db/create-user.ts`. Set NEW_USER_EMAIL, NEW_USER_NAME, NEW_USER_ROLE (owner/caller), NEW_USER_PASSWORD (14+ characters) and optionally NEW_USER_DIALERR_EMAIL in the provisioner's process environment using a local secure method. Do not put passwords in shell history/arguments. Then:
+3. Open the site: the first visitor to a new live workspace enters their name, becomes Admin and is shown a private link to bookmark. There are no emails or passwords; Admin creates a private link for each agent under Team. To create a user or recover a lost Admin link from the server instead, set NEW_USER_NAME, NEW_USER_ROLE (admin/basic/manager) and optionally NEW_USER_DIALERR_EMAIL, then run the command below; it prints the private link once:
 
 ```sh
 node --env-file=.env.local --import tsx db/create-user.ts
 ```
 
-Remove temporary NEW_USER_* values from the environment after provisioning. There is no public signup. Never use a default/shared password. The live database starts empty; demo records are not copied.
+Only a hash of each link is stored, so a lost link is replaced, not recovered. After the Admin link is claimed there is no public signup. Treat each link like a key: anyone holding it can open that account. The live database starts empty; demo records are not copied.
 
 4. Build and start behind HTTPS on a private server when deployment is separately approved. The application binds loopback. Do not expose PostgreSQL to the browser or give callers database credentials.
 5. Complete [the integration checklist](docs/INTEGRATION-STATUS.md) before turning on any live provider capability. The provider's own embedded UI access boundary remains unverified.
@@ -106,7 +106,7 @@ The latest audit adds an owner-only Launch readiness panel under Integrations an
 
 Run `npm run doctor` for a secret-free configuration report. Exit code 2 means team launch prerequisites are incomplete. When using `.env.local`, run `node --env-file=.env.local --import tsx db/doctor.ts` so the CLI receives that file. A passing configuration check is not a substitute for provider or deployment acceptance.
 
-`npm run test:postgres` runs an isolated temporary real PostgreSQL cluster and a production HTTP server. It tests actual owner/caller login, revocation, scoped records, concurrent updates, private documents and encrypted backup/restore. It cleans up its own database, server and fixture files. It never uses your DATABASE_URL or contacts Dialerr/Google. The embedded database dependency is development-only; do not use it as your production service.
+`npm run test:postgres` runs an isolated temporary real PostgreSQL cluster and a production HTTP server. It tests actual owner/caller private-link sign-in, revocation, scoped records, concurrent updates, private documents and encrypted backup/restore. It cleans up its own database, server and fixture files. It never uses your DATABASE_URL or contacts Dialerr/Google. The embedded database dependency is development-only; do not use it as your production service.
 
 ### Encrypted full backup and safe restore
 

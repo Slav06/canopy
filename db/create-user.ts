@@ -1,10 +1,8 @@
-import { passwordHash } from "../lib/auth";
+import { newAccessKey } from "../lib/auth";
 import { mutate, pool } from "../lib/store";
 if (process.env.WORKSPACE_MODE !== "live")
   throw Error("Set WORKSPACE_MODE=live");
-const email = process.env.NEW_USER_EMAIL;
-const password = process.env.NEW_USER_PASSWORD;
-const name = process.env.NEW_USER_NAME;
+const name = process.env.NEW_USER_NAME?.trim();
 const rawRole = process.env.NEW_USER_ROLE ?? "owner";
 if (!["owner", "admin", "caller", "basic", "manager"].includes(rawRole))
   throw Error("Use admin, basic, or manager for NEW_USER_ROLE");
@@ -14,22 +12,27 @@ const role =
     : ["caller", "basic"].includes(rawRole)
       ? "caller"
       : "owner";
-if (!email || !password || password.length < 14 || !name)
-  throw Error(
-    "Set NEW_USER_EMAIL, NEW_USER_NAME and NEW_USER_PASSWORD (14+ characters) securely in this process environment",
-  );
+if (!name) throw Error("Set NEW_USER_NAME");
+const { key, hash } = newAccessKey();
 await mutate((s) => {
-  if (s.users.some((u) => u.email === email))
+  if (s.users.some((u) => u.name.toLowerCase() === name.toLowerCase()))
     throw Error("User already exists");
   s.users.push({
     id: crypto.randomUUID(),
     name,
-    email,
+    email: "",
     role,
     capabilities: {},
-    passwordHash: passwordHash(password),
+    accessHash: hash,
     dialerrEmail: process.env.NEW_USER_DIALERR_EMAIL,
   });
 });
-console.log("User created");
+// The link is shown once; only its hash is stored. This is also the recovery
+// path if every Admin link is lost.
+console.log(
+  "User created. Private link (share it privately, shown once):\n" +
+    (process.env.APP_ORIGIN ?? "http://127.0.0.1:3210") +
+    "/?key=" +
+    key,
+);
 await pool().end();

@@ -4087,3 +4087,24 @@ article.lead-card select {
   color: #346bc7;
   font-size: 12px;
 }
+
+/* Private access links (no-password sign-in). */
+.link-box {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid #ece7d4;
+  border-radius: 6px;
+  background: #faf7ec;
+  font-size: 12px;
+}
+.link-row {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+.link-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}

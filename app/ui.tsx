@@ -152,6 +152,155 @@ async function api(route: string, method = "GET", body?: unknown) {
   if (!r.ok) throw Error(data.error ?? "Request failed");
   return data;
 }
+const privateLink = (key: string) => location.origin + "/?key=" + key;
+/** Shows a private access link once, with copy. The server keeps only a hash. */
+function LinkBox({ link, who }: { link: string; who: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="link-box" role="status">
+      <strong>Private link for {who}</strong>
+      <div className="link-row">
+        <input
+          readOnly
+          value={link}
+          aria-label={"Private link for " + who}
+          onFocus={(e) => e.currentTarget.select()}
+        />
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(link);
+              setCopied(true);
+            } catch {
+              setCopied(false);
+            }
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <p className="muted">
+        Bookmark or save this link now — it is shown only once and it is the
+        only way in. Anyone with the link can open this account, so share it
+        privately.
+      </p>
+    </div>
+  );
+}
+/** Live-workspace entry: claim a new workspace, or open a private link. No emails or passwords. */
+function Access({
+  message,
+  onDone,
+}: {
+  message: string;
+  onDone: () => void;
+}) {
+  const [claimable, setClaimable] = useState<boolean | null>(null);
+  const [error, setError] = useState(message);
+  const [busy, setBusy] = useState(false);
+  const [link, setLink] = useState("");
+  useEffect(() => {
+    api("auth/setup")
+      .then((d) => setClaimable(!!d.claimable))
+      .catch((e) => {
+        setClaimable(false);
+        setError((e as Error).message);
+      });
+  }, []);
+  const submit = (run: (f: FormData) => Promise<void>) => async (
+    e: React.FormEvent<HTMLFormElement>,
+  ) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    setBusy(true);
+    try {
+      await run(f);
+      setError("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="login">
+      <div className="brand">
+        <Sprout />
+        canopy<span>REAL ESTATE</span>
+      </div>
+      <div className="panel">
+        {link ? (
+          <>
+            <h1>You're the admin.</h1>
+            <LinkBox link={link} who="you" />
+            <button className="primary" onClick={onDone}>
+              I saved my link — continue
+            </button>
+          </>
+        ) : claimable ? (
+          <>
+            <h1>Set up Canopy.</h1>
+            <p>
+              This workspace is new. Enter your name to become its admin and
+              get your private link.
+            </p>
+            <form
+              onSubmit={submit(async (f) => {
+                const d = await api("auth/claim", "POST", {
+                  name: f.get("name"),
+                });
+                setLink(privateLink(d.key));
+              })}
+            >
+              <Field label="Your name">
+                <input name="name" required autoComplete="name" />
+              </Field>
+              {error && (
+                <p role="alert" className="error">
+                  {error}
+                </p>
+              )}
+              <button className="primary" disabled={busy}>
+                {busy ? "Setting up…" : "Become admin"}
+              </button>
+            </form>
+          </>
+        ) : (
+          <>
+            <h1>Open your private link.</h1>
+            <p>
+              Canopy has no passwords. Use the link your admin gave you, or
+              paste it here. Lost it? Ask your admin for a new one.
+            </p>
+            <form
+              onSubmit={submit(async (f) => {
+                const value = String(f.get("link") ?? "").trim();
+                const key = value.includes("key=")
+                  ? (value.split("key=")[1] ?? "").split(/[&#]/)[0]
+                  : value;
+                await api("auth/link", "POST", { key });
+                onDone();
+              })}
+            >
+              <Field label="Your private link">
+                <input name="link" required autoComplete="off" />
+              </Field>
+              {error && (
+                <p role="alert" className="error">
+                  {error}
+                </p>
+              )}
+              <button className="primary" disabled={busy || claimable === null}>
+                {busy ? "Opening…" : "Open Canopy"}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 function Badge({
   children,
   tone = "",
@@ -247,6 +396,7 @@ export default function CRM() {
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [login, setLogin] = useState(false);
+  const [myLink, setMyLink] = useState("");
   const [modal, setModal] = useState("");
   const [sidebar, setSidebar] = useState(false);
   const [call, setCall] = useState<{
@@ -283,8 +433,16 @@ export default function CRM() {
     }
   }
   useEffect(() => {
-    refresh();
     const p = new URLSearchParams(location.search);
+    // A private link carries its key; it stays in the address so the page can
+    // be bookmarked and reopened after the session ends.
+    const key = p.get("key");
+    (key
+      ? api("auth/link", "POST", { key }).catch((e) =>
+          setError((e as Error).message),
+        )
+      : Promise.resolve()
+    ).then(refresh);
     setView(p.get("view") ?? "Today");
     try {
       const state = JSON.parse(sessionStorage.getItem("canopy-view") ?? "{}");
@@ -520,51 +678,14 @@ export default function CRM() {
     }) ?? [];
   if (login)
     return (
-      <div className="login">
-        <div className="brand">
-          <Sprout />
-          canopy<span>REAL ESTATE</span>
-        </div>
-        <div className="panel">
-          <h1>Welcome back.</h1>
-          <p>Sign in to your Canopy workspace.</p>
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              try {
-                await api("auth/login", "POST", Object.fromEntries(f));
-                await refresh();
-              } catch (e) {
-                setError((e as Error).message);
-              }
-            }}
-          >
-            <Field label="Email">
-              <input
-                type="email"
-                name="email"
-                required
-                autoComplete="username"
-              />
-            </Field>
-            <Field label="Password">
-              <input
-                type="password"
-                name="password"
-                required
-                autoComplete="current-password"
-              />
-            </Field>
-            {error && (
-              <p role="alert" className="error">
-                {error}
-              </p>
-            )}
-            <button className="primary">Sign in</button>
-          </form>
-        </div>
-      </div>
+      <Access
+        message={error}
+        onDone={() => {
+          setError("");
+          setLoading(true);
+          refresh();
+        }}
+      />
     );
   if (loading || !s || !user)
     return (
@@ -1649,7 +1770,7 @@ export default function CRM() {
                     </table>
                   </div>
                   <p className="muted">
-                    Create individual CRM logins under Team. Each agent signs
+                    Create a private Canopy link for each agent under Team. Each agent signs
                     into their own Dialerr account inside the toolbar.
                   </p>
                 </section>
@@ -1924,15 +2045,39 @@ export default function CRM() {
               </button>
             </div>
           ) : (
-            <button
-              onClick={async () => {
-                await api("auth/logout", "POST", {});
-                location.reload();
-              }}
-            >
-              <LogOut size={16} />
-              Sign out
-            </button>
+            <>
+              {myLink ? (
+                <LinkBox link={myLink} who="you" />
+              ) : (
+                <button
+                  onClick={async () => {
+                    if (
+                      !confirm(
+                        "Get a new private link? Your current link will stop working everywhere.",
+                      )
+                    )
+                      return;
+                    try {
+                      const d = await api("auth/new-link", "POST", {});
+                      setMyLink(privateLink(d.key));
+                    } catch (e) {
+                      setError((e as Error).message);
+                    }
+                  }}
+                >
+                  Get a new private link
+                </button>
+              )}
+              <button
+                onClick={async () => {
+                  await api("auth/logout", "POST", {});
+                  location.href = "/";
+                }}
+              >
+                <LogOut size={16} />
+                Sign out
+              </button>
+            </>
           )}
           <p className="muted">
             Live workspace setup is in README. Demo roles are not a live
@@ -4652,18 +4797,20 @@ function LaunchReadiness() {
 function TeamControls({ mode, act, s }: { mode: string; act: Act; s: State }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<{ name: string; link: string }>();
   return (
     <section className="panel audit">
-      <AgentPermissions s={s} act={act} />
+      <AgentPermissions s={s} act={act} live={mode !== "demo"} />
       <h2>Add an agent</h2>
       <p>
-        Create an individual login with assigned-lead access. Share access
-        details privately. No invitation is sent.
+        Enter a name to create a private link with assigned-lead access. Send
+        the link to that person privately; there is no email or password, and
+        no invitation is sent.
       </p>
       {mode === "demo" ? (
         <div className="inline-alert">
-          Demo role switching is available from the workspace menu. Real login
-          accounts require PostgreSQL and a live workspace.
+          Demo role switching is available from the workspace menu. Private
+          agent links require PostgreSQL and a live workspace.
         </div>
       ) : (
         <form
@@ -4672,12 +4819,13 @@ function TeamControls({ mode, act, s }: { mode: string; act: Act; s: State }) {
             const form = e.currentTarget;
             setBusy(true);
             try {
-              await act(
+              const d = await act(
                 "team/users",
                 "POST",
                 Object.fromEntries(new FormData(form)),
-                "Agent login created",
+                "Agent link created",
               );
+              setCreated({ name: d.name, link: privateLink(d.key) });
               form.reset();
               setError("");
             } catch (e) {
@@ -4696,20 +4844,8 @@ function TeamControls({ mode, act, s }: { mode: string; act: Act; s: State }) {
                 </option>
               </select>
             </Field>
-            <Field label="Caller name">
-              <input name="name" required />
-            </Field>
-            <Field label="Login email">
-              <input name="email" type="email" required autoComplete="off" />
-            </Field>
-            <Field label="Temporary password (14+ characters)">
-              <input
-                name="password"
-                type="password"
-                minLength={14}
-                required
-                autoComplete="new-password"
-              />
+            <Field label="Agent name">
+              <input name="name" required autoComplete="off" />
             </Field>
           </div>
           {error && (
@@ -4718,15 +4854,25 @@ function TeamControls({ mode, act, s }: { mode: string; act: Act; s: State }) {
             </p>
           )}
           <button className="primary" disabled={busy}>
-            {busy ? "Creating…" : "Create agent login"}
+            {busy ? "Creating…" : "Create agent link"}
           </button>
+          {created && <LinkBox link={created.link} who={created.name} />}
         </form>
       )}
     </section>
   );
 }
 
-function AgentPermissions({ s, act }: { s: State; act: Act }) {
+function AgentPermissions({
+  s,
+  act,
+  live,
+}: {
+  s: State;
+  act: Act;
+  live: boolean;
+}) {
+  const [links, setLinks] = useState<Record<string, string>>({});
   return (
     <>
       <h2>Agent modes & permissions</h2>
@@ -4741,7 +4887,7 @@ function AgentPermissions({ s, act }: { s: State; act: Act }) {
             <div className="section-head">
               <div>
                 <h3>{u.name}</h3>
-                <p>{u.email}</p>
+                {u.email && <p>{u.email}</p>}
               </div>
               <Badge>{roleLabel(u)}</Badge>
             </div>
@@ -4803,6 +4949,32 @@ function AgentPermissions({ s, act }: { s: State; act: Act }) {
             >
               {u.disabled ? "Enable account" : "Revoke account access"}
             </button>
+            {live && !u.disabled && (
+              <button
+                onClick={async () => {
+                  if (
+                    !confirm(
+                      "Create a new private link for " +
+                        u.name +
+                        "? Their current link will stop working.",
+                    )
+                  )
+                    return;
+                  try {
+                    const d = await act(
+                      "team/users/" + u.id + "/link",
+                      "POST",
+                      {},
+                      "New link created",
+                    );
+                    setLinks((l) => ({ ...l, [u.id]: privateLink(d.key) }));
+                  } catch {}
+                }}
+              >
+                New private link
+              </button>
+            )}
+            {links[u.id] && <LinkBox link={links[u.id]} who={u.name} />}
           </section>
         ))}
       <details>

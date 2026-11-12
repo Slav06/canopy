@@ -14,3 +14,4 @@ docs/provider/
 *.backup
 *.bak
 .DS_Store
+.vercel

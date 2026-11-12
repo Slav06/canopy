@@ -7,7 +7,7 @@
 - `npm run build`: passed with Next.js webpack production build. Routes `/`, `/_not-found` and dynamic `/api/[...path]` generated successfully.
 - `python3 tests/http-check.py`: **17/17** real loopback HTTP checks passed. This script restores the original demo fixture after testing.
 
-Core tests cover role-projected data, password hashes and session tamper rejection, duplicate imports preserving corrections, duplicate rows within a file, row validation errors, one seller/multiple properties, opt-out and local-window enforcement, exact-body webhook HMAC, webhook retry deduplication, ambiguous property review, inbound STOP, and separate underwriting methods/actual receipts.
+Core tests cover role-projected data, hashed private-link keys and session tamper rejection, duplicate imports preserving corrections, duplicate rows within a file, row validation errors, one seller/multiple properties, opt-out and local-window enforcement, exact-body webhook HMAC, webhook retry deduplication, ambiguous property review, inbound STOP, and separate underwriting methods/actual receipts.
 
 HTTP tests cover direct caller export and financial-write denial, unassigned lead mutation denial, assignment restrictions, persistent note saves, independent property notes, DNC calling and messaging blocks, appointment retry idempotence, invalid date rejection, demo drafts with no transmission, message retry idempotence, cross-property message ID collisions, and cross-origin mutation rejection.
 

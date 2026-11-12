@@ -27,12 +27,6 @@ services:
         generateValue: true
       - key: CRM_DATA_DIR
         value: /var/data/canopy
-      - key: BOOTSTRAP_ADMIN_EMAIL
-        sync: false
-      - key: BOOTSTRAP_ADMIN_PASSWORD
-        sync: false
-      - key: BOOTSTRAP_ADMIN_NAME
-        value: Canopy Admin
       - key: NEXT_PUBLIC_MAPILLARY_ENABLED
         value: false
       - key: LIVE_CALLING_ENABLED

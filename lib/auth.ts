@@ -1,9 +1,9 @@
 import { can, canReadLead, type Capability } from "./permissions";
 import { cookies } from "next/headers";
 import {
+  createHash,
   createHmac,
   timingSafeEqual,
-  scryptSync,
   randomBytes,
 } from "node:crypto";
 import { demo, readState } from "./store";
@@ -25,20 +25,24 @@ function secret() {
     );
   return value;
 }
-export function passwordHash(password: string) {
-  const salt = randomBytes(16).toString("hex");
-  return salt + ":" + scryptSync(password, salt, 64).toString("hex");
+/** A new private-link key. Only its hash is stored, so a lost link is replaced, never recovered. */
+export function newAccessKey() {
+  const key = randomBytes(32).toString("base64url");
+  return { key, hash: accessHash(key) };
 }
-export function verifyPassword(password: string, hash: string) {
-  const [salt, digest] = hash.split(":");
-  if (!salt || !digest) return false;
-  const a = Buffer.from(digest, "hex"),
-    b = scryptSync(password, salt, 64);
-  return a.length === b.length && timingSafeEqual(a, b);
+export function accessHash(key: string) {
+  return createHash("sha256").update(key).digest("hex");
 }
-export function signSession(id: string) {
+/** Sessions are bound to the current link, so replacing a link signs its old sessions out. */
+const linkStamp = (hash: string) => hash.slice(0, 16);
+export const sessionSeconds = 30 * 24 * 3600;
+export function signSession(user: Pick<User, "id" | "accessHash">) {
   const payload = Buffer.from(
-    JSON.stringify({ id, exp: Date.now() + 8 * 3600000 }),
+    JSON.stringify({
+      id: user.id,
+      link: linkStamp(user.accessHash ?? ""),
+      exp: Date.now() + sessionSeconds * 1000,
+    }),
   ).toString("base64url");
   return (
     payload +
@@ -46,7 +50,9 @@ export function signSession(id: string) {
     createHmac("sha256", secret()).update(payload).digest("base64url")
   );
 }
-export function parseSession(token: string) {
+export function parseSession(
+  token: string,
+): { id: string; link: string } | null {
   const [payload, sig] = token.split(".");
   if (!payload || !sig) return null;
   const expected = createHmac("sha256", secret()).update(payload).digest();
@@ -55,7 +61,9 @@ export function parseSession(token: string) {
     return null;
   try {
     const p = JSON.parse(Buffer.from(payload, "base64url").toString());
-    return p.exp > Date.now() ? p.id : null;
+    return p.exp > Date.now() && typeof p.id === "string"
+      ? { id: p.id as string, link: String(p.link ?? "") }
+      : null;
   } catch {
     return null;
   }
@@ -63,13 +71,23 @@ export function parseSession(token: string) {
 export async function currentUser(): Promise<User> {
   const c = await cookies();
   const s = await readState();
-  const id = demo
-    ? ["caller", "manager"].includes(c.get("canopy_demo_role")?.value ?? "")
-      ? c.get("canopy_demo_role")!.value
-      : "owner"
-    : parseSession(c.get("canopy_session")?.value ?? "");
-  const u = s.users.find((u) => u.id === id);
-  if (!u || u.disabled) throw new HttpError(401, "Sign in to continue");
+  if (demo) {
+    const role = c.get("canopy_demo_role")?.value ?? "";
+    const id = ["caller", "manager"].includes(role) ? role : "owner";
+    const u = s.users.find((u) => u.id === id);
+    if (!u || u.disabled) throw new HttpError(401, "Sign in to continue");
+    return u;
+  }
+  const session = parseSession(c.get("canopy_session")?.value ?? "");
+  const u = s.users.find((u) => u.id === session?.id);
+  if (
+    !session ||
+    !u ||
+    u.disabled ||
+    !u.accessHash ||
+    linkStamp(u.accessHash) !== session.link
+  )
+    throw new HttpError(401, "Sign in to continue");
   return u;
 }
 export function ownerOnly(user: User) {

@@ -17,8 +17,6 @@ function run(args) {
   });
 }
 await run(["--import", "tsx", "db/migrate.ts"]);
-await run(["--import", "tsx", "db/bootstrap-admin.ts"]);
-delete env.BOOTSTRAP_ADMIN_PASSWORD;
 const server = spawn(
   process.execPath,
   [

@@ -36,8 +36,8 @@ export async function readiness() {
       );
       add(
         "Owner account",
-        s.users.some((u) => u.role === "owner" && !!u.passwordHash),
-        "Provision an owner before signing in",
+        s.users.some((u) => u.role === "owner" && !!u.accessHash),
+        "Open the site once to claim the Admin link",
       );
     } catch {
       add(

@@ -118,7 +118,7 @@ export function publicState(
       ),
     ],
     messages: (s.messages ?? []).filter((m) => owner || ids.has(m.leadId)),
-    users: s.users.map(({ passwordHash, dialerrEmail, ...u }) => u),
+    users: s.users.map(({ accessHash, dialerrEmail, ...u }) => u),
     contacts: s.contacts.filter((c) => owner || contactIds.has(c.id)),
     properties: s.properties
       .filter((p) => owner || propertyIds.has(p.id))

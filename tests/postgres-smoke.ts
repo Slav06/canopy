@@ -83,30 +83,6 @@ try {
   started = true;
   await pg.createDatabase("canopy_test");
   await exec(process.execPath, ["--import", "tsx", "db/migrate.ts"], { env });
-  let refusedBootstrap = false;
-  try {
-    await exec(process.execPath, ["--import", "tsx", "db/bootstrap-admin.ts"], {
-      env,
-    });
-  } catch {
-    refusedBootstrap = true;
-  }
-  pass("first launch rejects absent admin credentials", refusedBootstrap);
-  await exec(process.execPath, ["--import", "tsx", "db/bootstrap-admin.ts"], {
-    env: {
-      ...env,
-      BOOTSTRAP_ADMIN_EMAIL: "owner@test.invalid",
-      BOOTSTRAP_ADMIN_NAME: "Test Owner",
-      BOOTSTRAP_ADMIN_PASSWORD: password,
-    },
-  });
-  await exec(process.execPath, ["--import", "tsx", "db/bootstrap-admin.ts"], {
-    env: {
-      ...env,
-      BOOTSTRAP_ADMIN_EMAIL: "replacement@test.invalid",
-      BOOTSTRAP_ADMIN_PASSWORD: password + "other",
-    },
-  });
   app = spawn(
     process.execPath,
     [
@@ -132,29 +108,42 @@ try {
   assert.ok(ready, "isolated production server started");
   const health = await request("health");
   pass(
-    "unauthenticated health check exposes no workspace data",
-    health.status === 200 && JSON.stringify(health.data) === '{"status":"ok"}',
+    "new workspace is healthy and awaiting its admin",
+    health.status === 200 &&
+      JSON.stringify(health.data) === '{"status":"setup"}' &&
+      (await request("auth/setup")).data.claimable === true,
   );
   pass(
     "live workspace refuses anonymous access",
     (await request("state")).status === 401,
   );
   pass(
-    "wrong password refused",
-    (
-      await request("auth/login", "POST", {
-        email: "owner@test.invalid",
-        password: "wrong",
-      })
-    ).status === 401,
+    "unknown link refused",
+    (await request("auth/link", "POST", { key: "wrong" })).status === 401,
   );
-  const login = await request("auth/login", "POST", {
-    email: "owner@test.invalid",
-    password,
-  });
+  const login = await request("auth/claim", "POST", { name: "Test Owner" });
   pass(
-    "real owner login succeeds with HttpOnly cookie",
-    login.status === 200 && !!login.cookie,
+    "first visitor claims the admin link with an HttpOnly session",
+    login.status === 200 && !!login.cookie && login.data.key.length >= 40,
+  );
+  pass(
+    "admin can only be claimed once",
+    (await request("auth/claim", "POST", { name: "Intruder" }, "")).status ===
+      409 && (await request("auth/setup")).data.claimable === false,
+  );
+  pass(
+    "health reports ok without exposing workspace data",
+    JSON.stringify((await request("health")).data) === '{"status":"ok"}',
+  );
+  const ownerLink = await request(
+    "auth/link",
+    "POST",
+    { key: login.data.key },
+    "",
+  );
+  pass(
+    "admin private link signs in again",
+    ownerLink.status === 200 && !!ownerLink.cookie,
   );
   cookie = login.cookie;
   const ownerCookie = cookie;
@@ -166,18 +155,19 @@ try {
       initial.data.state.contacts.length === 0,
   );
   pass(
-    "bootstrap rerun preserves the first admin account",
+    "workspace holds only the claimed admin and no link secrets",
     initial.data.state.users.length === 1 &&
-      initial.data.state.users[0].email === "owner@test.invalid",
+      initial.data.state.users[0].name === "Test Owner" &&
+      !JSON.stringify(initial.data).includes("accessHash"),
   );
   const caller = await request("team/users", "POST", {
     name: "Test Caller",
-    email: "caller@test.invalid",
-    password,
   });
   pass(
-    "owner creates real caller login",
-    caller.status === 200 && caller.data.role === "caller",
+    "owner creates caller with a private link",
+    caller.status === 200 &&
+      caller.data.role === "caller" &&
+      caller.data.key.length >= 40,
   );
   const first = await request("leads", "POST", {
     name: "Real-test Seller",
@@ -207,11 +197,13 @@ try {
       second.data.propertyId !== first.data.propertyId,
   );
   await request("leads/" + id, "PATCH", { assignedTo: caller.data.id });
-  const callerLogin = await request("auth/login", "POST", {
-    email: "caller@test.invalid",
-    password,
-  });
-  pass("real caller login succeeds", callerLogin.status === 200);
+  const callerLogin = await request(
+    "auth/link",
+    "POST",
+    { key: caller.data.key },
+    "",
+  );
+  pass("caller private link signs in", callerLogin.status === 200);
   cookie = callerLogin.cookie;
   const state = await request("state");
   pass(
@@ -282,9 +274,9 @@ try {
   cookie = ownerCookie;
   const exported = await request("export");
   pass(
-    "owner export excludes password hashes",
+    "owner export excludes link hashes",
     exported.status === 200 &&
-      !JSON.stringify(exported.data).includes("passwordHash"),
+      !JSON.stringify(exported.data).includes("accessHash"),
   );
   await request("team/users/" + caller.data.id, "PATCH", { disabled: true });
   pass(
@@ -293,15 +285,39 @@ try {
       401,
   );
   pass(
-    "revoked caller cannot log in",
-    (
-      await request("auth/login", "POST", {
-        email: "caller@test.invalid",
-        password,
-      })
-    ).status === 401,
+    "revoked caller link is refused",
+    (await request("auth/link", "POST", { key: caller.data.key }, ""))
+      .status === 401,
   );
   await request("team/users/" + caller.data.id, "PATCH", { disabled: false });
+  const relinked = await request(
+    "team/users/" + caller.data.id + "/link",
+    "POST",
+    {},
+  );
+  pass(
+    "admin replaces a caller link; old link and its sessions stop working",
+    relinked.status === 200 &&
+      relinked.data.key !== caller.data.key &&
+      (await request("auth/link", "POST", { key: caller.data.key }, ""))
+        .status === 401 &&
+      (await request("state", "GET", undefined, callerLogin.cookie)).status ===
+        401,
+  );
+  callerLogin.cookie = (
+    await request("auth/link", "POST", { key: relinked.data.key }, "")
+  ).cookie;
+  pass(
+    "caller cannot replace another person's link",
+    (
+      await request(
+        "team/users/" + caller.data.id + "/link",
+        "POST",
+        {},
+        callerLogin.cookie,
+      )
+    ).status === 403,
+  );
   const deal = await request("deals", "POST", { leadId: id });
   const payload = new FormData();
   payload.set("dealId", deal.data.id);
@@ -337,18 +353,18 @@ try {
   );
   const manager = await request("team/users", "POST", {
     name: "Test Manager",
-    email: "manager@test.invalid",
-    password,
     role: "manager",
   });
   pass(
     "admin creates upper management account",
     manager.status === 200 && manager.data.role === "manager",
   );
-  const managementLogin = await request("auth/login", "POST", {
-    email: "manager@test.invalid",
-    password,
-  });
+  const managementLogin = await request(
+    "auth/link",
+    "POST",
+    { key: manager.data.key },
+    "",
+  );
   pass("upper management login authenticates", managementLogin.status === 200);
   pass(
     "management with no toggles cannot export",

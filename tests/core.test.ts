@@ -7,15 +7,15 @@ import { commitImport, inspectImport, normalizePhone } from "../lib/imports";
 import { callingEligibility, verifyWebhook } from "../lib/dialerr";
 import { sellerMAO, detailedMAO, soldCompARV } from "../lib/model";
 import {
-  passwordHash,
-  verifyPassword,
+  newAccessKey,
+  accessHash,
   assertLead,
   signSession,
   parseSession,
 } from "../lib/auth";
 test("caller projection omits owner financials, unassigned records, provider identities and credentials", () => {
   const s = seed();
-  s.users[0].passwordHash = "secret";
+  s.users[0].accessHash = "secret";
   s.users[0].dialerrEmail = "private";
   const p = publicState(s, s.users[1]);
   assert.equal(p.deals.length, 0);
@@ -28,7 +28,7 @@ test("caller projection omits owner financials, unassigned records, provider ide
     p.properties.some((p) => p.id === "h4"),
     false,
   );
-  assert.equal("passwordHash" in p.users[0], false);
+  assert.equal("accessHash" in p.users[0], false);
   assert.equal("dialerrEmail" in p.users[0], false);
   assert.throws(() => assertLead(s.users[1], s.leads[1]), /assigned/);
 });
@@ -180,13 +180,17 @@ test("sold comps estimate ARV from weighted closed-sale price per square foot", 
   });
   assert.equal(soldCompARV({ subjectSqft: 0, comps: [] }), null);
 });
-test("password hashes and signed expiring sessions reject tampering", () => {
-  const hash = passwordHash("a strong test password");
-  assert.equal(verifyPassword("a strong test password", hash), true);
-  assert.equal(verifyPassword("incorrect", hash), false);
+test("private link keys are stored hashed and signed sessions reject tampering", () => {
+  const { key, hash } = newAccessKey();
+  assert.equal(accessHash(key), hash);
+  assert.notEqual(accessHash(key + "x"), hash);
+  assert.equal(hash.includes(key), false);
   process.env.SESSION_SECRET = "test-secret-at-least-thirty-two-characters";
-  const token = signSession("caller");
-  assert.equal(parseSession(token), "caller");
+  const token = signSession({ id: "caller", accessHash: hash });
+  assert.deepEqual(parseSession(token), {
+    id: "caller",
+    link: hash.slice(0, 16),
+  });
   assert.equal(parseSession(token + "x"), null);
 });
 import { ingestProviderEvent } from "../lib/provider-events";

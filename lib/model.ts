@@ -30,7 +30,8 @@ export type User = {
   role: "owner" | "caller" | "manager";
   capabilities?: Partial<Record<import("./permissions").Capability, boolean>>;
   dialerrEmail?: string;
-  passwordHash?: string;
+  /** SHA-256 of the private access link key; the key itself is never stored. */
+  accessHash?: string;
   disabled?: boolean;
 };
 export type Phone = {

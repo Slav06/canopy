@@ -28,10 +28,10 @@ if (process.env.VERCEL_ENV === "production") {
   if (!process.env.APP_ORIGIN?.startsWith("https://"))
     throw new Error("Production Vercel deploy requires an HTTPS APP_ORIGIN");
 
-  // Vercel functions have no startup hook; migrate and safely create the first
-  // Admin during the production build. These scripts preserve existing users.
+  // Vercel functions have no startup hook; migrate during the production
+  // build. The migration preserves existing data. The first Admin claims a
+  // private link in the browser, so no credentials are needed here.
   await run(["--import", "tsx", "db/migrate.ts"]);
-  await run(["--import", "tsx", "db/bootstrap-admin.ts"]);
 }
 
 await run(["node_modules/next/dist/bin/next", "build", "--webpack"]);
